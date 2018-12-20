@@ -194,9 +194,9 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
-#include <getopt.h>
-
 #include <dfs_posix.h>
+#include "optparse.h"
+
 /*
 struct stat
 {
@@ -233,7 +233,7 @@ typedef enum {FALSE = 0, TRUE = !FALSE} bool;
 typedef int smallint;
 typedef unsigned smalluint;
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__CC_ARM)
 #define ALIGN1
 #define barrier()
 #define STDIN_FILENO 0
@@ -266,7 +266,7 @@ struct globals;
 /* '*const' ptr makes gcc optimize code much better.
  * Magic prevents ptr_to_globals from going into rodata.
  * If you want to assign a value, use SET_PTR_TO_GLOBALS(x) */
-struct globals *const ptr_to_globals;
+struct globals *ptr_to_globals;
 #define SET_PTR_TO_GLOBALS(x) do { \
 	(*(struct globals**)&ptr_to_globals) = (void*)(x); \
 	barrier(); \
@@ -1074,6 +1074,9 @@ static int vi_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 static int vi_main(int argc, char **argv)
 {
 	int c;
+	char *file_name;
+	struct optparse options;
+	
 
 	INIT_G();
 
@@ -1110,8 +1113,8 @@ static int vi_main(int argc, char **argv)
 			initial_cmds[0] = xstrndup(p, MAX_INPUT_LEN);
 	}
 #endif
-    optind = 0;
-	while ((c = getopt(argc, argv, "hCRH" IF_FEATURE_VI_COLON("c:"))) != -1) {
+	optparse_init(&options, argv);
+	while ((c = optparse(&options, "hCRH" IF_FEATURE_VI_COLON("c:"))) != -1) {
 		switch (c) {
 #if ENABLE_FEATURE_VI_CRASHME
 		case 'C':
@@ -1140,9 +1143,9 @@ static int vi_main(int argc, char **argv)
 	}
 
 	// The argv array can be used by the ":next"  and ":rewind" commands
-	argv += optind;
-	argc -= optind;
-    if (argc == 0) 
+
+	file_name = optparse_arg(&options);
+    if (file_name == 0)
     {
         bb_show_usage();
         free(ptr_to_globals);
@@ -1150,13 +1153,13 @@ static int vi_main(int argc, char **argv)
     }
 
 	//----- This is the main file handling loop --------------
-	save_argc = argc;
-	optind = 0;
+
 	// "Save cursor, use alternate screen buffer, clear screen"
 	write1("\033[?1049h");
 	while (1) {
-		edit_file(argv[optind]); /* param might be NULL */
-		if (++optind >= argc)
+		edit_file(file_name); /* param might be NULL */
+		file_name = optparse_arg(&options);
+		if (file_name == 0)
 			break;
 	}
 	// "Use normal screen buffer, restore cursor"

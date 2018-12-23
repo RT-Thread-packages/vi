@@ -194,9 +194,15 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
-#include <getopt.h>
-
 #include <dfs_posix.h>
+
+#ifdef RT_USING_POSIX
+#include <dfs_poll.h>
+#include <sys/types.h>
+#endif
+
+#include "optparse.h"
+
 /*
 struct stat
 {
@@ -233,7 +239,7 @@ typedef enum {FALSE = 0, TRUE = !FALSE} bool;
 typedef int smallint;
 typedef unsigned smalluint;
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__CC_ARM)
 #define ALIGN1
 #define barrier()
 #define STDIN_FILENO 0
@@ -266,7 +272,7 @@ struct globals;
 /* '*const' ptr makes gcc optimize code much better.
  * Magic prevents ptr_to_globals from going into rodata.
  * If you want to assign a value, use SET_PTR_TO_GLOBALS(x) */
-struct globals *const ptr_to_globals;
+struct globals *ptr_to_globals;
 #define SET_PTR_TO_GLOBALS(x) do { \
 	(*(struct globals**)&ptr_to_globals) = (void*)(x); \
 	barrier(); \
@@ -332,13 +338,7 @@ enum {
 };
 
 extern struct finsh_shell *shell;
-static int mysleep(int hund)
-{
-	if (hund != 0)
-		fflush_all();
 
-	return rt_sem_take(&shell->rx_sem, hund*10) == RT_EOK;
-}
 static void* xzalloc(size_t size)
 {
     void *ptr = malloc(size);
@@ -350,6 +350,45 @@ static void bb_show_usage(void)
     printf("Usage: vi [FILE]\n");
 }
 
+#ifdef RT_USING_POSIX
+static void bb_perror_msg(const char *s, ...)
+{
+	rt_kprintf("%s", s);
+}
+
+int safe_read(int fd, void *buf, size_t count)
+{
+	int n;
+
+	do {
+		n = read(fd, buf, count);
+	} while (n < 0 && errno == EINTR);
+
+	return n;
+}
+
+int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
+{
+	while (1) {
+		int n = poll(ufds, nfds, timeout);
+		if (n >= 0)
+			return n;
+		/* Make sure we inch towards completion */
+		if (timeout > 0)
+			timeout--;
+		/* E.g. strace causes poll to return this */
+		if (errno == EINTR)
+			continue;
+		/* Kernel is very low on memory. Retry. */
+		/* I doubt many callers would handle this correctly! */
+		if (errno == ENOMEM)
+			continue;
+		bb_perror_msg("poll");
+		return n;
+	}
+}
+
+#else
 extern rt_device_t rt_console_get_device(void);
 static int wait_read(int fd, void *buf, size_t len, int timeout)
 {
@@ -367,8 +406,14 @@ static int wait_read(int fd, void *buf, size_t len, int timeout)
     }
     return ret;
 }
+
+#endif
+
 static int64_t read_key(int fd, char *buffer, int timeout)
 {
+#ifdef RT_USING_POSIX
+	struct pollfd pfd;
+#endif	
 	const char *seq;
 	int n;
 
@@ -456,7 +501,10 @@ static int64_t read_key(int fd, char *buffer, int timeout)
 		/* '[','3',';','3','~' |0x80,KEYCODE_ALT_DELETE, - unused */
 		0
 	};
-
+#ifdef RT_USING_POSIX
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+#endif
 	buffer++; /* saved chars counter is in buffer[-1] now */
 
  start_over:
@@ -468,7 +516,11 @@ static int64_t read_key(int fd, char *buffer, int timeout)
 		 * if fd can be in non-blocking mode.
 		 */
 		if (timeout >= -1) {
+#ifdef RT_USING_POSIX
+			if (safe_poll(&pfd, 1, timeout) == 0) {
+#else			
 			if (rt_sem_take(&shell->rx_sem, timeout) != RT_EOK) {
+#endif				
 				/* Timed out */
 				errno = EAGAIN;
 				return -1;
@@ -480,7 +532,11 @@ static int64_t read_key(int fd, char *buffer, int timeout)
 		 * When we were reading 3 bytes here, we were eating
 		 * "li" too, and cat was getting wrong input.
 		 */
+#ifdef RT_USING_POSIX
+		n = safe_read(fd, buffer, 1);
+#else
 		n = wait_read(fd, buffer, 1, -1);
+#endif
 		if (n <= 0)
 			return -1;
 	}
@@ -506,13 +562,18 @@ static int64_t read_key(int fd, char *buffer, int timeout)
 		/* Loop through chars in this sequence */
 		while (1) {
 			/* So far escape sequence matched up to [i-1] */
-			if (n <= i) {
+			if (n <= i) {		
+				int read_num;
 				/* Need more chars, read another one if it wouldn't block.
 				 * Note that escape sequences come in as a unit,
 				 * so if we block for long it's not really an escape sequence.
 				 * Timeout is needed to reconnect escape sequences
 				 * split up by transmission over a serial console. */
+#ifdef RT_USING_POSIX
+				if (safe_poll(&pfd, 1, 50) == 0) {
+#else
 				if (0 != 0) {
+#endif					
 					/* No more data!
 					 * Array is sorted from shortest to longest,
 					 * we can't match anything later in array -
@@ -521,7 +582,12 @@ static int64_t read_key(int fd, char *buffer, int timeout)
 					goto got_all;
 				}
 				errno = 0;
-				if (wait_read(fd, buffer + n, 1, 50) <= 0) {
+#ifdef RT_USING_POSIX
+				read_num = safe_read(fd, buffer + n, 1);
+#else
+				read_num = wait_read(fd, buffer + n, 1, 50);
+#endif
+				if (read_num <= 0) {
 					/* If EAGAIN, then fd is O_NONBLOCK and poll lied:
 					 * in fact, there is no data. */
 					if (errno != EAGAIN) {
@@ -561,12 +627,22 @@ static int64_t read_key(int fd, char *buffer, int timeout)
 	 * n = bytes read. Try to read more until we time out.
 	 */
 	while (n < KEYCODE_BUFFER_SIZE-1) { /* 1 for count byte at buffer[-1] */
+		int read_num;
+#ifdef RT_USING_POSIX
+		if (safe_poll(&pfd, 1, 50) == 0) {
+#else	
 		if (0 != 0) {
+#endif		
 			/* No more data! */
 			break;
 		}
 		errno = 0;
-		if (wait_read(fd, buffer + n, 1, 50) <= 0) {
+#ifdef RT_USING_POSIX
+		read_num = safe_read(fd, buffer + n, 1);
+#else
+		read_num = wait_read(fd, buffer + n, 1, 50);
+#endif		
+		if (read_num <= 0) {
 			/* If EAGAIN, then fd is O_NONBLOCK and poll lied:
 			 * in fact, there is no data. */
 			if (errno != EAGAIN) {
@@ -1074,6 +1150,9 @@ static int vi_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 static int vi_main(int argc, char **argv)
 {
 	int c;
+	char *file_name;
+	struct optparse options;
+	
 
 	INIT_G();
 
@@ -1110,8 +1189,8 @@ static int vi_main(int argc, char **argv)
 			initial_cmds[0] = xstrndup(p, MAX_INPUT_LEN);
 	}
 #endif
-    optind = 0;
-	while ((c = getopt(argc, argv, "hCRH" IF_FEATURE_VI_COLON("c:"))) != -1) {
+	optparse_init(&options, argv);
+	while ((c = optparse(&options, "hCRH" IF_FEATURE_VI_COLON("c:"))) != -1) {
 		switch (c) {
 #if ENABLE_FEATURE_VI_CRASHME
 		case 'C':
@@ -1140,9 +1219,9 @@ static int vi_main(int argc, char **argv)
 	}
 
 	// The argv array can be used by the ":next"  and ":rewind" commands
-	argv += optind;
-	argc -= optind;
-    if (argc == 0) 
+
+	file_name = optparse_arg(&options);
+    if (file_name == 0)
     {
         bb_show_usage();
         free(ptr_to_globals);
@@ -1150,19 +1229,21 @@ static int vi_main(int argc, char **argv)
     }
 
 	//----- This is the main file handling loop --------------
-	save_argc = argc;
-	optind = 0;
+
 	// "Save cursor, use alternate screen buffer, clear screen"
 	write1("\033[?1049h");
 	while (1) {
-		edit_file(argv[optind]); /* param might be NULL */
-		if (++optind >= argc)
+		edit_file(file_name); /* param might be NULL */
+		file_name = optparse_arg(&options);
+		if (file_name == 0)
 			break;
 	}
 	// "Use normal screen buffer, restore cursor"
 	write1("\033[?1049l");
 	//-----------------------------------------------------------
+#ifndef RT_USING_POSIX
     wait_read(STDIN_FILENO, status_buffer, STATUS_BUFFER_LEN, 0);
+#endif
     free(text);
     free(screen);
     free(current_filename);
@@ -3266,7 +3347,7 @@ static void catch_sig(int sig)
 	siglongjmp(restart, sig);
 }
 #endif /* FEATURE_VI_USE_SIGNALS */
-#if 0
+#ifdef RT_USING_POSIX
 static int mysleep(int hund)	// sleep for 'hund' 1/100 seconds or stdin ready
 {
 	struct pollfd pfd[1];
@@ -3278,6 +3359,14 @@ static int mysleep(int hund)	// sleep for 'hund' 1/100 seconds or stdin ready
 	pfd[0].events = POLLIN;
 	return safe_poll(pfd, 1, hund*10) > 0;
 }
+#else
+static int mysleep(int hund)
+{
+	if (hund != 0)
+		fflush_all();
+
+	return rt_sem_take(&shell->rx_sem, hund*10) == RT_EOK;
+}
 #endif
 //----- IO Routines --------------------------------------------
 static int readit(void) // read (maybe cursor) key from stdin
@@ -3285,11 +3374,18 @@ static int readit(void) // read (maybe cursor) key from stdin
 	int c;
 
 	fflush_all();
-	c = read_key(STDIN_FILENO, readbuffer, /*timeout off:*/ -2);
+
+	// Wait for input. TIMEOUT = -1 makes read_key wait even
+	// on nonblocking stdin.
+	// Note: read_key sets errno to 0 on success.
+ again:
+	c = read_key(STDIN_FILENO, readbuffer, /*timeout:*/ -1);
 	if (c == -1) { // EOF/error
+		if (errno == EAGAIN) // paranoia
+			goto again;
 		go_bottom_and_clear_to_eol();
 		cookmode(); // terminal to "cooked"
-		bb_error_msg_and_die("can't read user input\n");
+		bb_error_msg_and_die("can't read user input");
 	}
 	return c;
 }

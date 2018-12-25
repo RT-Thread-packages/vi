@@ -182,89 +182,7 @@
 //usage:	)
 //usage:     "\n	-H	List available features"
 
-#include <rtthread.h>
-#include <shell.h>
-#include <ctype.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <string.h>
-#include <dfs_posix.h>
-
-#ifdef RT_USING_POSIX
-#include <dfs_poll.h>
-#include <sys/types.h>
-#endif
-
-#include "optparse.h"
-
-/*
-struct stat
-{
-    rt_device_t st_dev;
-    rt_uint16_t st_mode;
-    rt_uint32_t st_size;
-    rt_time_t   st_mtime;
-};
-*/
-
-#define MAIN_EXTERNALLY_VISIBLE
-#define NOINLINE
-#define xmalloc malloc
-#define xrealloc realloc
-#define xstrdup strdup
-#define fflush_all() fflush(NULL)
-#define full_write write
-#define full_read read
-#define bb_putchar putchar
-#define bb_error_msg_and_die(x) printf(x)
-
-#define CONFIG_FEATURE_VI_MAX_LEN 4096
-#define ENABLE_FEATURE_VI_WIN_RESIZE 0
-#define ENABLE_FEATURE_VI_READONLY 0
-#define ENABLE_FEATURE_EDITING_ASK_TERMINAL 1
-#define ENABLE_FEATURE_VI_ASK_TERMINAL 1
-#define ENABLE_FEATURE_LESS_ASK_TERMINAL 1
-#define IF_FEATURE_VI_ASK_TERMINAL(x) x
-#define IF_FEATURE_VI_SEARCH(x) /*##x##*/
-#define IF_FEATURE_VI_COLON(x) /*##x##*/
-#define STDIN_FILENO 0
-
-typedef enum {FALSE = 0, TRUE = !FALSE} bool;
-typedef int smallint;
-typedef unsigned smalluint;
-
-#if defined(_MSC_VER) || defined(__CC_ARM)
-#define ALIGN1
-#define barrier()
-#define STDIN_FILENO 0
-static void *memrchr(const void* ptr, int ch, size_t pos)
-{
-    char *end = (char *)ptr+pos-1;
-    while (end != ptr)
-    {
-        if (*end == ch)
-            return end;
-        end--;
-    }
-    return (*end == ch)?(end):(NULL);
-}
-static int isblank(int ch)
-{
-    if (ch == ' ' || ch == '\t')
-        return 1;
-    return 0;
-}
-#else
-#define ALIGN1 __attribute__((aligned(1)))
-/* At least gcc 3.4.6 on mipsel system needs optimization barrier */
-#define barrier() __asm__ __volatile__("":::"memory")
-#endif
+#include "vi_utils.h"
 
 /* This struct is deliberately not defined. */
 /* See docs/keep_data_small.txt */
@@ -273,433 +191,6 @@ struct globals;
  * Magic prevents ptr_to_globals from going into rodata.
  * If you want to assign a value, use SET_PTR_TO_GLOBALS(x) */
 struct globals *ptr_to_globals;
-#define SET_PTR_TO_GLOBALS(x) do { \
-	(*(struct globals**)&ptr_to_globals) = (void*)(x); \
-	barrier(); \
-} while (0)
-#define FREE_PTR_TO_GLOBALS() do { \
-	if (ENABLE_FEATURE_CLEAN_UP) { \
-		free(ptr_to_globals); \
-	} \
-} while (0)
-
-/* "Keycodes" that report an escape sequence.
- * We use something which fits into signed char,
- * yet doesn't represent any valid Unicode character.
- * Also, -1 is reserved for error indication and we don't use it. */
-enum {
-	KEYCODE_UP       =  -2,
-	KEYCODE_DOWN     =  -3,
-	KEYCODE_RIGHT    =  -4,
-	KEYCODE_LEFT     =  -5,
-	KEYCODE_HOME     =  -6,
-	KEYCODE_END      =  -7,
-	KEYCODE_INSERT   =  -8,
-	KEYCODE_DELETE   =  -9,
-	KEYCODE_PAGEUP   = -10,
-	KEYCODE_PAGEDOWN = -11,
-	// -12 is reserved for Alt/Ctrl/Shift-TAB
-#if 0
-	KEYCODE_FUN1     = -13,
-	KEYCODE_FUN2     = -14,
-	KEYCODE_FUN3     = -15,
-	KEYCODE_FUN4     = -16,
-	KEYCODE_FUN5     = -17,
-	KEYCODE_FUN6     = -18,
-	KEYCODE_FUN7     = -19,
-	KEYCODE_FUN8     = -20,
-	KEYCODE_FUN9     = -21,
-	KEYCODE_FUN10    = -22,
-	KEYCODE_FUN11    = -23,
-	KEYCODE_FUN12    = -24,
-#endif
-	/* Be sure that last defined value is small enough
-	 * to not interfere with Alt/Ctrl/Shift bits.
-	 * So far we do not exceed -31 (0xfff..fffe1),
-	 * which gives us three upper bits in LSB to play with.
-	 */
-	//KEYCODE_SHIFT_TAB  = (-12)         & ~0x80,
-	//KEYCODE_SHIFT_...  = KEYCODE_...   & ~0x80,
-	//KEYCODE_CTRL_UP    = KEYCODE_UP    & ~0x40,
-	//KEYCODE_CTRL_DOWN  = KEYCODE_DOWN  & ~0x40,
-	KEYCODE_CTRL_RIGHT = KEYCODE_RIGHT & ~0x40,
-	KEYCODE_CTRL_LEFT  = KEYCODE_LEFT  & ~0x40,
-	//KEYCODE_ALT_UP     = KEYCODE_UP    & ~0x20,
-	//KEYCODE_ALT_DOWN   = KEYCODE_DOWN  & ~0x20,
-	KEYCODE_ALT_RIGHT  = KEYCODE_RIGHT & ~0x20,
-	KEYCODE_ALT_LEFT   = KEYCODE_LEFT  & ~0x20,
-
-	KEYCODE_CURSOR_POS = -0x100, /* 0xfff..fff00 */
-	/* How long is the longest ESC sequence we know?
-	 * We want it big enough to be able to contain
-	 * cursor position sequence "ESC [ 9999 ; 9999 R"
-	 */
-	KEYCODE_BUFFER_SIZE = 16
-};
-
-extern struct finsh_shell *shell;
-
-static void* xzalloc(size_t size)
-{
-    void *ptr = malloc(size);
-    memset(ptr, 0, size);
-    return ptr;
-}
-static void bb_show_usage(void)
-{
-    printf("Usage: vi [FILE]\n");
-}
-
-#ifdef RT_USING_POSIX
-static void bb_perror_msg(const char *s, ...)
-{
-	rt_kprintf("%s", s);
-}
-
-int safe_read(int fd, void *buf, size_t count)
-{
-	int n;
-
-	do {
-		n = read(fd, buf, count);
-	} while (n < 0 && errno == EINTR);
-
-	return n;
-}
-
-int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
-{
-	while (1) {
-		int n = poll(ufds, nfds, timeout);
-		if (n >= 0)
-			return n;
-		/* Make sure we inch towards completion */
-		if (timeout > 0)
-			timeout--;
-		/* E.g. strace causes poll to return this */
-		if (errno == EINTR)
-			continue;
-		/* Kernel is very low on memory. Retry. */
-		/* I doubt many callers would handle this correctly! */
-		if (errno == ENOMEM)
-			continue;
-		bb_perror_msg("poll");
-		return n;
-	}
-}
-
-#else
-extern rt_device_t rt_console_get_device(void);
-static int wait_read(int fd, void *buf, size_t len, int timeout)
-{
-    int ret = 0;
-	rt_device_t console_device = rt_console_get_device();
-    rt_sem_take(&shell->rx_sem, 0);
-    ret = rt_device_read(console_device,0,buf,len);
-    if (ret <= 0)
-    {
-        while (rt_sem_take(&shell->rx_sem, 0) == RT_EOK);
-        rt_sem_take(&shell->rx_sem, timeout);
-        ret = rt_device_read(console_device,0,buf,len);
-        if (ret <= 0)
-            errno = EAGAIN;
-    }
-    return ret;
-}
-
-#endif
-
-static int64_t read_key(int fd, char *buffer, int timeout)
-{
-#ifdef RT_USING_POSIX
-	struct pollfd pfd;
-#endif	
-	const char *seq;
-	int n;
-
-	/* Known escape sequences for cursor and function keys.
-	 * See "Xterm Control Sequences"
-	 * http://invisible-island.net/xterm/ctlseqs/ctlseqs.html
-	 */
-	static const char esccmds[] ALIGN1 = {
-		'O','A'        |0x80,KEYCODE_UP      ,
-		'O','B'        |0x80,KEYCODE_DOWN    ,
-		'O','C'        |0x80,KEYCODE_RIGHT   ,
-		'O','D'        |0x80,KEYCODE_LEFT    ,
-		'O','H'        |0x80,KEYCODE_HOME    ,
-		'O','F'        |0x80,KEYCODE_END     ,
-#if 0
-		'O','P'        |0x80,KEYCODE_FUN1    ,
-		/* [ESC] ESC O [2] P - [Alt-][Shift-]F1 */
-		/* ESC [ O 1 ; 2 P - Shift-F1 */
-		/* ESC [ O 1 ; 3 P - Alt-F1 */
-		/* ESC [ O 1 ; 4 P - Alt-Shift-F1 */
-		/* ESC [ O 1 ; 5 P - Ctrl-F1 */
-		/* ESC [ O 1 ; 6 P - Ctrl-Shift-F1 */
-		'O','Q'        |0x80,KEYCODE_FUN2    ,
-		'O','R'        |0x80,KEYCODE_FUN3    ,
-		'O','S'        |0x80,KEYCODE_FUN4    ,
-#endif
-		'[','A'        |0x80,KEYCODE_UP      ,
-		'[','B'        |0x80,KEYCODE_DOWN    ,
-		'[','C'        |0x80,KEYCODE_RIGHT   ,
-		'[','D'        |0x80,KEYCODE_LEFT    ,
-		/* ESC [ 1 ; 2 x, where x = A/B/C/D: Shift-<arrow> */
-		/* ESC [ 1 ; 3 x, where x = A/B/C/D: Alt-<arrow> - implemented below */
-		/* ESC [ 1 ; 4 x, where x = A/B/C/D: Alt-Shift-<arrow> */
-		/* ESC [ 1 ; 5 x, where x = A/B/C/D: Ctrl-<arrow> - implemented below */
-		/* ESC [ 1 ; 6 x, where x = A/B/C/D: Ctrl-Shift-<arrow> */
-		/* ESC [ 1 ; 7 x, where x = A/B/C/D: Ctrl-Alt-<arrow> */
-		/* ESC [ 1 ; 8 x, where x = A/B/C/D: Ctrl-Alt-Shift-<arrow> */
-		'[','H'        |0x80,KEYCODE_HOME    , /* xterm */
-		'[','F'        |0x80,KEYCODE_END     , /* xterm */
-		/* [ESC] ESC [ [2] H - [Alt-][Shift-]Home (End similarly?) */
-		/* '[','Z'        |0x80,KEYCODE_SHIFT_TAB, */
-		'[','1','~'    |0x80,KEYCODE_HOME    , /* vt100? linux vt? or what? */
-		'[','2','~'    |0x80,KEYCODE_INSERT  ,
-		/* ESC [ 2 ; 3 ~ - Alt-Insert */
-		'[','3','~'    |0x80,KEYCODE_DELETE  ,
-		/* [ESC] ESC [ 3 [;2] ~ - [Alt-][Shift-]Delete */
-		/* ESC [ 3 ; 3 ~ - Alt-Delete */
-		/* ESC [ 3 ; 5 ~ - Ctrl-Delete */
-		'[','4','~'    |0x80,KEYCODE_END     , /* vt100? linux vt? or what? */
-		'[','5','~'    |0x80,KEYCODE_PAGEUP  ,
-		/* ESC [ 5 ; 3 ~ - Alt-PgUp */
-		/* ESC [ 5 ; 5 ~ - Ctrl-PgUp */
-		/* ESC [ 5 ; 7 ~ - Ctrl-Alt-PgUp */
-		'[','6','~'    |0x80,KEYCODE_PAGEDOWN,
-		'[','7','~'    |0x80,KEYCODE_HOME    , /* vt100? linux vt? or what? */
-		'[','8','~'    |0x80,KEYCODE_END     , /* vt100? linux vt? or what? */
-#if 0
-		'[','1','1','~'|0x80,KEYCODE_FUN1    , /* old xterm, deprecated by ESC O P */
-		'[','1','2','~'|0x80,KEYCODE_FUN2    , /* old xterm... */
-		'[','1','3','~'|0x80,KEYCODE_FUN3    , /* old xterm... */
-		'[','1','4','~'|0x80,KEYCODE_FUN4    , /* old xterm... */
-		'[','1','5','~'|0x80,KEYCODE_FUN5    ,
-		/* [ESC] ESC [ 1 5 [;2] ~ - [Alt-][Shift-]F5 */
-		'[','1','7','~'|0x80,KEYCODE_FUN6    ,
-		'[','1','8','~'|0x80,KEYCODE_FUN7    ,
-		'[','1','9','~'|0x80,KEYCODE_FUN8    ,
-		'[','2','0','~'|0x80,KEYCODE_FUN9    ,
-		'[','2','1','~'|0x80,KEYCODE_FUN10   ,
-		'[','2','3','~'|0x80,KEYCODE_FUN11   ,
-		'[','2','4','~'|0x80,KEYCODE_FUN12   ,
-		/* ESC [ 2 4 ; 2 ~ - Shift-F12 */
-		/* ESC [ 2 4 ; 3 ~ - Alt-F12 */
-		/* ESC [ 2 4 ; 4 ~ - Alt-Shift-F12 */
-		/* ESC [ 2 4 ; 5 ~ - Ctrl-F12 */
-		/* ESC [ 2 4 ; 6 ~ - Ctrl-Shift-F12 */
-#endif
-		/* '[','1',';','5','A' |0x80,KEYCODE_CTRL_UP   , - unused */
-		/* '[','1',';','5','B' |0x80,KEYCODE_CTRL_DOWN , - unused */
-		'[','1',';','5','C' |0x80,KEYCODE_CTRL_RIGHT,
-		'[','1',';','5','D' |0x80,KEYCODE_CTRL_LEFT ,
-		/* '[','1',';','3','A' |0x80,KEYCODE_ALT_UP    , - unused */
-		/* '[','1',';','3','B' |0x80,KEYCODE_ALT_DOWN  , - unused */
-		'[','1',';','3','C' |0x80,KEYCODE_ALT_RIGHT,
-		'[','1',';','3','D' |0x80,KEYCODE_ALT_LEFT ,
-		/* '[','3',';','3','~' |0x80,KEYCODE_ALT_DELETE, - unused */
-		0
-	};
-#ifdef RT_USING_POSIX
-	pfd.fd = fd;
-	pfd.events = POLLIN;
-#endif
-	buffer++; /* saved chars counter is in buffer[-1] now */
-
- start_over:
-	errno = 0;
-	n = (unsigned char)buffer[-1];
-	if (n == 0) {
-		/* If no data, wait for input.
-		 * If requested, wait TIMEOUT ms. TIMEOUT = -1 is useful
-		 * if fd can be in non-blocking mode.
-		 */
-		if (timeout >= -1) {
-#ifdef RT_USING_POSIX
-			if (safe_poll(&pfd, 1, timeout) == 0) {
-#else			
-			if (rt_sem_take(&shell->rx_sem, timeout) != RT_EOK) {
-#endif				
-				/* Timed out */
-				errno = EAGAIN;
-				return -1;
-			}
-		}
-		/* It is tempting to read more than one byte here,
-		 * but it breaks pasting. Example: at shell prompt,
-		 * user presses "c","a","t" and then pastes "\nline\n".
-		 * When we were reading 3 bytes here, we were eating
-		 * "li" too, and cat was getting wrong input.
-		 */
-#ifdef RT_USING_POSIX
-		n = safe_read(fd, buffer, 1);
-#else
-		n = wait_read(fd, buffer, 1, -1);
-#endif
-		if (n <= 0)
-			return -1;
-	}
-
-	{
-		unsigned char c = buffer[0];
-		n--;
-		if (n)
-			memmove(buffer, buffer + 1, n);
-		/* Only ESC starts ESC sequences */
-		if (c != 27) {
-			buffer[-1] = n;
-			return c;
-		}
-	}
-
-	/* Loop through known ESC sequences */
-	seq = esccmds;
-	while (*seq != '\0') {
-		/* n - position in sequence we did not read yet */
-		int i = 0; /* position in sequence to compare */
-
-		/* Loop through chars in this sequence */
-		while (1) {
-			/* So far escape sequence matched up to [i-1] */
-			if (n <= i) {		
-				int read_num;
-				/* Need more chars, read another one if it wouldn't block.
-				 * Note that escape sequences come in as a unit,
-				 * so if we block for long it's not really an escape sequence.
-				 * Timeout is needed to reconnect escape sequences
-				 * split up by transmission over a serial console. */
-#ifdef RT_USING_POSIX
-				if (safe_poll(&pfd, 1, 50) == 0) {
-#else
-				if (0 != 0) {
-#endif					
-					/* No more data!
-					 * Array is sorted from shortest to longest,
-					 * we can't match anything later in array -
-					 * anything later is longer than this seq.
-					 * Break out of both loops. */
-					goto got_all;
-				}
-				errno = 0;
-#ifdef RT_USING_POSIX
-				read_num = safe_read(fd, buffer + n, 1);
-#else
-				read_num = wait_read(fd, buffer + n, 1, 50);
-#endif
-				if (read_num <= 0) {
-					/* If EAGAIN, then fd is O_NONBLOCK and poll lied:
-					 * in fact, there is no data. */
-					if (errno != EAGAIN) {
-						/* otherwise: it's EOF/error */
-						buffer[-1] = 0;
-						return -1;
-					}
-					goto got_all;
-				}
-				n++;
-			}
-			if (buffer[i] != (seq[i] & 0x7f)) {
-				/* This seq doesn't match, go to next */
-				seq += i;
-				/* Forward to last char */
-				while (!(*seq & 0x80))
-					seq++;
-				/* Skip it and the keycode which follows */
-				seq += 2;
-				break;
-			}
-			if (seq[i] & 0x80) {
-				/* Entire seq matched */
-				n = 0;
-				/* n -= i; memmove(...);
-				 * would be more correct,
-				 * but we never read ahead that much,
-				 * and n == i here. */
-				buffer[-1] = 0;
-				return (signed char)seq[i+1];
-			}
-			i++;
-		}
-	}
-	/* We did not find matching sequence.
-	 * We possibly read and stored more input in buffer[] by now.
-	 * n = bytes read. Try to read more until we time out.
-	 */
-	while (n < KEYCODE_BUFFER_SIZE-1) { /* 1 for count byte at buffer[-1] */
-		int read_num;
-#ifdef RT_USING_POSIX
-		if (safe_poll(&pfd, 1, 50) == 0) {
-#else	
-		if (0 != 0) {
-#endif		
-			/* No more data! */
-			break;
-		}
-		errno = 0;
-#ifdef RT_USING_POSIX
-		read_num = safe_read(fd, buffer + n, 1);
-#else
-		read_num = wait_read(fd, buffer + n, 1, 50);
-#endif		
-		if (read_num <= 0) {
-			/* If EAGAIN, then fd is O_NONBLOCK and poll lied:
-			 * in fact, there is no data. */
-			if (errno != EAGAIN) {
-				/* otherwise: it's EOF/error */
-				buffer[-1] = 0;
-				return -1;
-			}
-			break;
-		}
-		n++;
-		/* Try to decipher "ESC [ NNN ; NNN R" sequence */
-		if ((ENABLE_FEATURE_EDITING_ASK_TERMINAL
-		    || ENABLE_FEATURE_VI_ASK_TERMINAL
-		    || ENABLE_FEATURE_LESS_ASK_TERMINAL
-		    )
-		 && n >= 5
-		 && buffer[0] == '['
-		 && buffer[n-1] == 'R'
-		 && isdigit((unsigned char)buffer[1])
-		) {
-			char *end;
-			unsigned long row, col;
-
-			row = strtoul(buffer + 1, &end, 10);
-			if (*end != ';' || !isdigit((unsigned char)end[1]))
-				continue;
-			col = strtoul(end + 1, &end, 10);
-			if (*end != 'R')
-				continue;
-			if (row < 1 || col < 1 || (row | col) > 0x7fff)
-				continue;
-
-			buffer[-1] = 0;
-			/* Pack into "1 <row15bits> <col16bits>" 32-bit sequence */
-			col |= (((-1 << 15) | row) << 16);
-			/* Return it in high-order word */
-			return ((int64_t) col << 32) | (uint32_t)KEYCODE_CURSOR_POS;
-		}
-	}
- got_all:
-
-	if (n <= 1) {
-		/* Alt-x is usually returned as ESC x.
-		 * Report ESC, x is remembered for the next call.
-		 */
-		buffer[-1] = n;
-		return 27;
-	}
-
-	/* We were doing "buffer[-1] = n; return c;" here, but this results
-	 * in unknown key sequences being interpreted as ESC + garbage.
-	 * This was not useful. Pretend there was no key pressed,
-	 * go and wait for a new keypress:
-	 */
-	buffer[-1] = 0;
-	goto start_over;
-}
 
 /* Should be after libbb.h: on some systems regex.h needs sys/types.h: */
 #if ENABLE_FEATURE_VI_REGEX_SEARCH
@@ -1141,6 +632,8 @@ static void crash_test();
 static int crashme = 0;
 #endif
 
+static struct optparse options;
+
 static void write1(const char *out)
 {
 	fputs(out, stdout);
@@ -1151,7 +644,7 @@ static int vi_main(int argc, char **argv)
 {
 	int c;
 	char *file_name;
-	struct optparse options;
+
 	
 
 	INIT_G();
@@ -1204,8 +697,8 @@ static int vi_main(int argc, char **argv)
 #endif
 #if ENABLE_FEATURE_VI_COLON
 		case 'c':		// cmd line vi command
-			if (*optarg)
-				initial_cmds[initial_cmds[0] != NULL] = xstrndup(optarg, MAX_INPUT_LEN);
+			if (*options.optarg)
+				initial_cmds[initial_cmds[0] != NULL] = xstrndup(options.optarg, MAX_INPUT_LEN);
 			break;
 #endif
 		case 'H':
@@ -1219,9 +712,9 @@ static int vi_main(int argc, char **argv)
 	}
 
 	// The argv array can be used by the ":next"  and ":rewind" commands
-
-	file_name = optparse_arg(&options);
-    if (file_name == 0)
+	options.argv += options.optind;
+	argc -= options.optind;
+    if (argc == 0)
     {
         bb_show_usage();
         free(ptr_to_globals);
@@ -1229,9 +722,11 @@ static int vi_main(int argc, char **argv)
     }
 
 	//----- This is the main file handling loop --------------
-
+	save_argc = argc;
+	options.optind = 0;
 	// "Save cursor, use alternate screen buffer, clear screen"
 	write1("\033[?1049h");
+	file_name = optparse_arg(&options);
 	while (1) {
 		edit_file(file_name); /* param might be NULL */
 		file_name = optparse_arg(&options);
@@ -1360,7 +855,7 @@ static void edit_file(char *fn)
 
 	cmd_mode = 0;		// 0=command  1=insert  2='R'eplace
 	cmdcnt = 0;
-	tabstop = 8;
+	tabstop = 4;
 	offset = 0;			// no horizontal offset
 	c = '\0';
 #if ENABLE_FEATURE_VI_DOT_CMD
@@ -1821,7 +1316,7 @@ static void colon(char *buf)
 		if (useforce) {
 			if (*cmd == 'q') {
 				// force end of argv list
-				optind = save_argc;
+				options.optind = save_argc;
 			}
 			editing = 0;
 			goto ret;
@@ -1832,7 +1327,7 @@ static void colon(char *buf)
 			goto ret;
 		}
 		// are there other file to edit
-		n = save_argc - optind - 1;
+		n = save_argc - options.optind - 1;
 		if (*cmd == 'q' && n > 0) {
 			status_line_bold("%d more file(s) to edit", n);
 			goto ret;
@@ -1843,11 +1338,11 @@ static void colon(char *buf)
 		}
 		if (*cmd == 'p') {
 			// are there previous files to edit
-			if (optind < 1) {
+			if (options.optind < 1) {
 				status_line_bold("No previous files to edit");
 				goto ret;
 			}
-			optind -= 2;
+			options.optind -= 2;
 		}
 		editing = 0;
 	} else if (strncmp(cmd, "read", i) == 0) {	// read file into text[]
@@ -1890,7 +1385,7 @@ static void colon(char *buf)
 			status_line_bold("No write since last change (:%s! overrides)", cmd);
 		} else {
 			// reset the filenames to edit
-			optind = -1; /* start from 0th file */
+			options.optind = -1; /* start from 0th file */
 			editing = 0;
 		}
 #if ENABLE_FEATURE_VI_SET

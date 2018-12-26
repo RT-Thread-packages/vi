@@ -46,6 +46,7 @@
 #define VI_ENABLE_SETOPTS
 // depends on RT_USING_POSIX_TERMIOS
 #define VI_ENABLE_WIN_RESIZE
+#define VI_ENABLE_YANKMARK
 
 #ifdef VI_ENABLE_VI_ASK_TERMINAL
 #define ENABLE_FEATURE_VI_ASK_TERMINAL 1
@@ -109,6 +110,15 @@
 #else
 #define ENABLE_FEATURE_VI_WIN_RESIZE 0
 #define IF_FEATURE_VI_WIN_RESIZE(...)
+#endif
+
+#ifdef VI_ENABLE_YANKMARK
+#define ENABLE_FEATURE_VI_YANKMARK 1
+#define IF_FEATURE_VI_YANKMARK(...) __VA_ARGS__
+#define ARRAY_SIZE(x) ((unsigned)(sizeof(x) / sizeof((x)[0])))
+#else
+#define ENABLE_FEATURE_VI_YANKMARK 0
+#define IF_FEATURE_VI_YANKMARK(...)
 #endif
 
 #define SET_PTR_TO_GLOBALS(x) do { \
@@ -194,8 +204,9 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
+#define ENABLE_DEBUG 1
 #ifdef VI_ENABLE_COLON
-char *xstrndup(const char *s, size_t n);
+char* FAST_FUNC xstrndup(const char *s, int n);
 char* last_char_is(const char *s, int c);
 #endif
 

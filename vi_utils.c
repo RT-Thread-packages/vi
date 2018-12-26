@@ -3,20 +3,30 @@
 extern struct finsh_shell *shell;
 
 #ifdef VI_ENABLE_COLON
-char *xstrndup(const char *s, size_t n)
+// Die if we can't allocate n+1 bytes (space for the null terminator) and copy
+// the (possibly truncated to length n) string into it.
+char* FAST_FUNC xstrndup(const char *s, int n)
 {
-    size_t len = rt_strlen(s);
-	if(len > n)
-		len = n;
-	len += 1;
-    char *tmp = (char *)rt_malloc(len);
+	int m;
+	char *t;
 
-    if (!tmp)
-        return RT_NULL;
+	if (ENABLE_DEBUG && s == NULL)
+		bb_error_msg_and_die("xstrndup bug");
 
-    rt_memcpy(tmp, s, len);
+	/* We can just xmalloc(n+1) and strncpy into it, */
+	/* but think about xstrndup("abc", 10000) wastage! */
+	m = n;
+	t = (char*) s;
+	while (m) {
+		if (!*t) break;
+		m--;
+		t++;
+	}
+	n -= m;
+	t = xmalloc(n + 1);
+	t[n] = '\0';
 
-    return tmp;
+	return memcpy(t, s, n);
 }
 
 char* last_char_is(const char *s, int c)

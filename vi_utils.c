@@ -435,3 +435,68 @@ int64_t read_key(int fd, char *buffer, int timeout)
 	buffer[-1] = 0;
 	goto start_over;
 }
+
+#if defined(VI_ENABLE_WIN_RESIZE) && defined(RT_USING_POSIX_TERMIOS)
+static int wh_helper(int value, int def_val, const char *env_name, int *err)
+{
+	/* Envvars override even if "value" from ioctl is valid (>0).
+	 * Rationale: it's impossible to guess what user wants.
+	 * For example: "man CMD | ...": should "man" format output
+	 * to stdout's width? stdin's width? /dev/tty's width? 80 chars?
+	 * We _cant_ know it. If "..." saves text for e.g. email,
+	 * then it's probably 80 chars.
+	 * If "..." is, say, "grep -v DISCARD | $PAGER", then user
+	 * would prefer his tty's width to be used!
+	 *
+	 * Since we don't know, at least allow user to do this:
+	 * "COLUMNS=80 man CMD | ..."
+	 */
+	char *s = getenv(env_name);
+	if (s) {
+		value = atoi(s);
+		/* If LINES/COLUMNS are set, pretend that there is
+		 * no error getting w/h, this prevents some ugly
+		 * cursor tricks by our callers */
+		*err = 0;
+	}
+
+	if (value <= 1 || value >= 30000)
+		value = def_val;
+	return value;
+}
+
+int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *height)
+{
+	struct winsize win;
+	int err;
+	int close_me = -1;
+
+	if (fd == -1) {
+		if (isatty(STDOUT_FILENO))
+			fd = STDOUT_FILENO;
+		else
+		if (isatty(STDERR_FILENO))
+			fd = STDERR_FILENO;
+		else
+		if (isatty(STDIN_FILENO))
+			fd = STDIN_FILENO;
+		else
+			close_me = fd = open("/dev/tty", O_RDONLY);
+	}
+
+	win.ws_row = 0;
+	win.ws_col = 0;
+	/* I've seen ioctl returning 0, but row/col is (still?) 0.
+	 * We treat that as an error too.  */
+	err = ioctl(fd, TIOCGWINSZ, &win) != 0 || win.ws_row == 0;
+	if (height)
+		*height = wh_helper(win.ws_row, 24, "LINES", &err);
+	if (width)
+		*width = wh_helper(win.ws_col, 80, "COLUMNS", &err);
+
+	if (close_me >= 0)
+		close(close_me);
+
+	return err;
+}
+#endif

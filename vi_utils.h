@@ -37,7 +37,6 @@
 #define bb_error_msg_and_die(x) printf(x)
 
 #define CONFIG_FEATURE_VI_MAX_LEN 4096
-#define ENABLE_FEATURE_VI_WIN_RESIZE 0
 #define ENABLE_FEATURE_EDITING_ASK_TERMINAL 1
 #define ENABLE_FEATURE_LESS_ASK_TERMINAL 1
 
@@ -45,6 +44,8 @@
 #define VI_ENABLE_COLON
 #define VI_ENABLE_SET
 #define VI_ENABLE_SETOPTS
+// depends on RT_USING_POSIX_TERMIOS
+#define VI_ENABLE_WIN_RESIZE
 
 #ifdef VI_ENABLE_VI_ASK_TERMINAL
 #define ENABLE_FEATURE_VI_ASK_TERMINAL 1
@@ -100,6 +101,14 @@
 #else
 #define ENABLE_FEATURE_VI_SETOPTS 0
 #define IF_FEATURE_VI_SETOPTS(...)
+#endif
+
+#ifdef VI_ENABLE_WIN_RESIZE
+#define ENABLE_FEATURE_VI_WIN_RESIZE 1
+#define IF_FEATURE_VI_WIN_RESIZE(...) __VA_ARGS__
+#else
+#define ENABLE_FEATURE_VI_WIN_RESIZE 0
+#define IF_FEATURE_VI_WIN_RESIZE(...)
 #endif
 
 #define SET_PTR_TO_GLOBALS(x) do { \
@@ -174,8 +183,11 @@ typedef unsigned smalluint;
 #define ALIGN1
 #define barrier()
 #define STDIN_FILENO 0
+#define STDOUT_FILENO 0
+#define STDERR_FILENO 0
 void *memrchr(const void* ptr, int ch, size_t pos);
 int isblank(int ch);
+int isatty (int  fd);
 #else
 #define ALIGN1 __attribute__((aligned(1)))
 /* At least gcc 3.4.6 on mipsel system needs optimization barrier */
@@ -198,6 +210,10 @@ int safe_read(int fd, void *buf, size_t count);
 int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout);
 #else
 int wait_read(int fd, void *buf, size_t len, int timeout);
+#endif
+
+#ifdef VI_ENABLE_WIN_RESIZE
+int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *height);
 #endif
 
 void* xzalloc(size_t size);

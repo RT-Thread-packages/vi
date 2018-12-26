@@ -13,8 +13,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
-#include <dfs_posix.h>
-
+#include <unistd.h>
 #ifdef RT_USING_POSIX
 #include <dfs_poll.h>
 #include <sys/types.h>
@@ -47,6 +46,7 @@
 // depends on RT_USING_POSIX_TERMIOS
 #define VI_ENABLE_WIN_RESIZE
 #define VI_ENABLE_YANKMARK
+#define VI_ENABLE_READONLY
 
 #ifdef VI_ENABLE_VI_ASK_TERMINAL
 #define ENABLE_FEATURE_VI_ASK_TERMINAL 1
@@ -192,9 +192,10 @@ typedef unsigned smalluint;
 #if defined(_MSC_VER) || defined(__CC_ARM)
 #define ALIGN1
 #define barrier()
-#define STDIN_FILENO 0
-#define STDOUT_FILENO 0
-#define STDERR_FILENO 0
+#define	F_OK	0
+#define	R_OK	4
+#define	W_OK	2
+#define	X_OK	1
 void *memrchr(const void* ptr, int ch, size_t pos);
 int isblank(int ch);
 int isatty (int  fd);

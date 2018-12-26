@@ -48,6 +48,7 @@
 #define VI_ENABLE_YANKMARK
 #define VI_ENABLE_READONLY
 #define VI_ENABLE_DOT_CMD
+#define VI_ENABLE_UNDO
 
 #ifdef VI_ENABLE_VI_ASK_TERMINAL
 #define ENABLE_FEATURE_VI_ASK_TERMINAL 1
@@ -63,14 +64,6 @@
 #else
 #define ENABLE_FEATURE_VI_COLON 0
 #define IF_FEATURE_VI_COLON(...)
-#endif
-
-#ifdef VI_ENABLE_YANKMARK
-#define ENABLE_FEATURE_VI_YANKMARK 1
-#define IF_FEATURE_VI_YANKMARK(...) __VA_ARGS__
-#else
-#define ENABLE_FEATURE_VI_YANKMARK 0
-#define IF_FEATURE_VI_YANKMARK(...)
 #endif
 
 #ifdef VI_ENABLE_SEARCH
@@ -128,6 +121,14 @@
 #else
 #define ENABLE_FEATURE_VI_DOT_CMD 0
 #define IF_FEATURE_VI_DOT_CMD(...)
+#endif
+
+#ifdef VI_ENABLE_UNDO
+#define ENABLE_FEATURE_VI_UNDO 1
+#define IF_FEATURE_VI_UNDO(...) __VA_ARGS__
+#else
+#define ENABLE_FEATURE_VI_UNDO 0
+#define IF_FEATURE_VI_UNDO(...)
 #endif
 
 #define SET_PTR_TO_GLOBALS(x) do { \

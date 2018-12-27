@@ -510,3 +510,12 @@ int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *heigh
 	return err;
 }
 #endif
+
+#if defined(VI_ENABLE_SEARCH) && !defined(HAVE_STRCHRNUL)
+char* FAST_FUNC strchrnul(const char *s, int c)
+{
+	while (*s != '\0' && *s != c)
+		s++;
+	return (char*)s;
+}
+#endif

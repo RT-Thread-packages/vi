@@ -51,6 +51,7 @@
 #define VI_ENABLE_UNDO
 #define VI_ENABLE_UNDO_QUEUE
 #define VI_UNDO_QUEUE_MAX 256
+#define VI_ENABLE_SEARCH
 
 #ifdef VI_ENABLE_VI_ASK_TERMINAL
 #define ENABLE_FEATURE_VI_ASK_TERMINAL 1
@@ -140,6 +141,14 @@
 #else
 #define ENABLE_FEATURE_VI_UNDO_QUEUE 0
 #define IF_FEATURE_VI_UNDO_QUEUE(...)
+#endif
+
+#ifdef VI_ENABLE_SEARCH
+#define ENABLE_FEATURE_VI_SEARCH 1
+#define IF_FEATURE_VI_SEARCH(...) __VA_ARGS__
+#else
+#define ENABLE_FEATURE_VI_SEARCH 0
+#define IF_FEATURE_VI_SEARCH(...)
 #endif
 
 #define SET_PTR_TO_GLOBALS(x) do { \
@@ -247,6 +256,10 @@ int wait_read(int fd, void *buf, size_t len, int timeout);
 
 #ifdef VI_ENABLE_WIN_RESIZE
 int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *height);
+#endif
+
+#if defined(VI_ENABLE_SEARCH) && !defined(HAVE_STRCHRNUL)
+char* FAST_FUNC strchrnul(const char *s, int c);
 #endif
 
 void* xzalloc(size_t size);

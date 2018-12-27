@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <unistd.h>
+#include <dfs_posix.h>
 #ifdef RT_USING_POSIX
 #include <dfs_poll.h>
 #include <sys/types.h>
@@ -151,6 +152,14 @@
 #define IF_FEATURE_VI_SEARCH(...)
 #endif
 
+#ifdef VI_ENABLE_REGEX_SEARCH
+#define ENABLE_FEATURE_VI_REGEX_SEARCH 1
+#define IF_FEATURE_VI_REGEX_SEARCH(...) __VA_ARGS__
+#else
+#define ENABLE_FEATURE_VI_REGEX_SEARCH 0
+#define IF_FEATURE_VI_REGEX_SEARCH(...)
+#endif
+
 #define SET_PTR_TO_GLOBALS(x) do { \
 	(*(struct globals**)&ptr_to_globals) = (void*)(x); \
 	barrier(); \
@@ -226,7 +235,6 @@ typedef unsigned smalluint;
 #define	R_OK	4
 #define	W_OK	2
 #define	X_OK	1
-void *memrchr(const void* ptr, int ch, size_t pos);
 int isblank(int ch);
 int isatty (int  fd);
 #else
@@ -258,12 +266,19 @@ int wait_read(int fd, void *buf, size_t len, int timeout);
 int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *height);
 #endif
 
-#if defined(VI_ENABLE_SEARCH) && !defined(HAVE_STRCHRNUL)
+#ifdef VI_ENABLE_SEARCH
 char* FAST_FUNC strchrnul(const char *s, int c);
+#endif
+
+#ifdef __GNUC__
+int strncasecmp(const char *s1, const char *s2, size_t n);
+int strcasecmp (const char *s1, const char *s2);
+char * strdup(const char *s);
 #endif
 
 void* xzalloc(size_t size);
 void bb_show_usage(void);
 int64_t read_key(int fd, char *buffer, int timeout);
+void *memrchr(const void* ptr, int ch, size_t pos);
 
 #endif

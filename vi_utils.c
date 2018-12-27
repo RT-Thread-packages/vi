@@ -1,7 +1,5 @@
 #include "vi_utils.h"
 
-extern struct finsh_shell *shell;
-
 #ifdef VI_ENABLE_COLON
 // Die if we can't allocate n+1 bytes (space for the null terminator) and copy
 // the (possibly truncated to length n) string into it.

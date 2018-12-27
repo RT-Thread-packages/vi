@@ -34,23 +34,12 @@
 #define bb_putchar putchar
 #define bb_error_msg_and_die(...) printf(__VA_ARGS__)
 
-#define VI_ENABLE_VI_ASK_TERMINAL
-#define VI_ENABLE_COLON
-#define VI_ENABLE_SET
-#define VI_ENABLE_SETOPTS
-// depends on RT_USING_POSIX_TERMIOS
-#define VI_ENABLE_WIN_RESIZE
-#define VI_ENABLE_YANKMARK
-#define VI_ENABLE_READONLY
-#define VI_ENABLE_DOT_CMD
-#define VI_ENABLE_UNDO
-#define VI_ENABLE_UNDO_QUEUE
-#define VI_UNDO_QUEUE_MAX 256
-#define VI_ENABLE_SEARCH
-#define VI_MAX_LEN 4096
-#define VI_ENABLE_8BIT
-
+#ifdef VI_MAX_LEN
 #define CONFIG_FEATURE_VI_MAX_LEN VI_MAX_LEN
+#else
+#define CONFIG_FEATURE_VI_MAX_LEN 4096
+#endif
+
 #define ENABLE_FEATURE_EDITING_ASK_TERMINAL 0
 #define ENABLE_FEATURE_LESS_ASK_TERMINAL 0
 
@@ -270,6 +259,8 @@ ssize_t FAST_FUNC full_write(int fd, const void *buf, size_t len);
 ssize_t FAST_FUNC full_read(int fd, void *buf, size_t len);
 #else
 int wait_read(int fd, void *buf, size_t len, int timeout);
+#define full_read read
+#define full_write write
 #endif
 
 #ifdef VI_ENABLE_WIN_RESIZE
@@ -290,5 +281,7 @@ void* xzalloc(size_t size);
 void bb_show_usage(void);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
+
+extern struct finsh_shell *shell;
 
 #endif

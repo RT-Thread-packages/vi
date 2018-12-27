@@ -31,8 +31,6 @@
 #define xrealloc realloc
 #define xstrdup strdup
 #define fflush_all() fflush(NULL)
-#define full_write write
-#define full_read read
 #define bb_putchar putchar
 #define bb_error_msg_and_die(x) printf(x)
 
@@ -258,6 +256,8 @@ char* FAST_FUNC skip_non_whitespace(const char *s);
 void bb_perror_msg(const char *s, ...);
 int safe_read(int fd, void *buf, size_t count);
 int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout);
+ssize_t FAST_FUNC full_write(int fd, const void *buf, size_t len);
+ssize_t FAST_FUNC full_read(int fd, void *buf, size_t len);
 #else
 int wait_read(int fd, void *buf, size_t len, int timeout);
 #endif

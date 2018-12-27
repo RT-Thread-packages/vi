@@ -32,11 +32,7 @@
 #define xstrdup strdup
 #define fflush_all() fflush(NULL)
 #define bb_putchar putchar
-#define bb_error_msg_and_die(x) printf(x)
-
-#define CONFIG_FEATURE_VI_MAX_LEN 4096
-#define ENABLE_FEATURE_EDITING_ASK_TERMINAL 0
-#define ENABLE_FEATURE_LESS_ASK_TERMINAL 0
+#define bb_error_msg_and_die(...) printf(__VA_ARGS__)
 
 #define VI_ENABLE_VI_ASK_TERMINAL
 #define VI_ENABLE_COLON
@@ -51,6 +47,11 @@
 #define VI_ENABLE_UNDO_QUEUE
 #define VI_UNDO_QUEUE_MAX 256
 #define VI_ENABLE_SEARCH
+#define VI_MAX_LEN 4096
+
+#define CONFIG_FEATURE_VI_MAX_LEN VI_MAX_LEN
+#define ENABLE_FEATURE_EDITING_ASK_TERMINAL 0
+#define ENABLE_FEATURE_LESS_ASK_TERMINAL 0
 
 #ifdef VI_ENABLE_VI_ASK_TERMINAL
 #define ENABLE_FEATURE_VI_ASK_TERMINAL 1

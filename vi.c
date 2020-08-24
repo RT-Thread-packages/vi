@@ -3849,7 +3849,7 @@ static void do_cmd(int c)
 			p = dot + 1;
 		}
 		goto dc4;		// now search for pattern
-		break;
+
 	case 'n':			// n- repeat search for last pattern
 		// search rest of text[] starting at next char
 		// if search fails return orignal "p" not the "p+1" address
@@ -3959,7 +3959,7 @@ static void do_cmd(int c)
 		if (*dot != '\n')
 			dot++;
 		goto dc_i;
-		break;
+
 	case 'B':			// B- back a blank-delimited Word
 	case 'E':			// E- end of a blank-delimited word
 	case 'W':			// W- forward a blank-delimited word
@@ -4076,7 +4076,7 @@ static void do_cmd(int c)
 			dot_prev();	// -
 		}
 		goto dc_i;
-		break;
+
 	case 'R':			// R- continuous Replace char
  dc5:
 		cmd_mode = 2;

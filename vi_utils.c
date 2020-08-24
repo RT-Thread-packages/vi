@@ -250,28 +250,28 @@ int64_t read_key(int fd, char *buffer, int timeout)
 	 * http://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 	 */
 	static const char esccmds[] ALIGN1 = {
-		'O','A'        |0x80,KEYCODE_UP      ,
-		'O','B'        |0x80,KEYCODE_DOWN    ,
-		'O','C'        |0x80,KEYCODE_RIGHT   ,
-		'O','D'        |0x80,KEYCODE_LEFT    ,
-		'O','H'        |0x80,KEYCODE_HOME    ,
-		'O','F'        |0x80,KEYCODE_END     ,
+		'O','A'        |0x80, (char) KEYCODE_UP      ,
+		'O','B'        |0x80, (char) KEYCODE_DOWN    ,
+		'O','C'        |0x80, (char) KEYCODE_RIGHT   ,
+		'O','D'        |0x80, (char) KEYCODE_LEFT    ,
+		'O','H'        |0x80, (char) KEYCODE_HOME    ,
+		'O','F'        |0x80, (char) KEYCODE_END     ,
 #if 0
-		'O','P'        |0x80,KEYCODE_FUN1    ,
+		'O','P'        |0x80, (char) KEYCODE_FUN1    ,
 		/* [ESC] ESC O [2] P - [Alt-][Shift-]F1 */
 		/* ESC [ O 1 ; 2 P - Shift-F1 */
 		/* ESC [ O 1 ; 3 P - Alt-F1 */
 		/* ESC [ O 1 ; 4 P - Alt-Shift-F1 */
 		/* ESC [ O 1 ; 5 P - Ctrl-F1 */
 		/* ESC [ O 1 ; 6 P - Ctrl-Shift-F1 */
-		'O','Q'        |0x80,KEYCODE_FUN2    ,
-		'O','R'        |0x80,KEYCODE_FUN3    ,
-		'O','S'        |0x80,KEYCODE_FUN4    ,
+		'O','Q'        |0x80, (char) KEYCODE_FUN2    ,
+		'O','R'        |0x80, (char) KEYCODE_FUN3    ,
+		'O','S'        |0x80, (char) KEYCODE_FUN4    ,
 #endif
-		'[','A'        |0x80,KEYCODE_UP      ,
-		'[','B'        |0x80,KEYCODE_DOWN    ,
-		'[','C'        |0x80,KEYCODE_RIGHT   ,
-		'[','D'        |0x80,KEYCODE_LEFT    ,
+		'[','A'        |0x80, (char) KEYCODE_UP      ,
+		'[','B'        |0x80, (char) KEYCODE_DOWN    ,
+		'[','C'        |0x80, (char) KEYCODE_RIGHT   ,
+		'[','D'        |0x80, (char) KEYCODE_LEFT    ,
 		/* ESC [ 1 ; 2 x, where x = A/B/C/D: Shift-<arrow> */
 		/* ESC [ 1 ; 3 x, where x = A/B/C/D: Alt-<arrow> - implemented below */
 		/* ESC [ 1 ; 4 x, where x = A/B/C/D: Alt-Shift-<arrow> */
@@ -279,54 +279,54 @@ int64_t read_key(int fd, char *buffer, int timeout)
 		/* ESC [ 1 ; 6 x, where x = A/B/C/D: Ctrl-Shift-<arrow> */
 		/* ESC [ 1 ; 7 x, where x = A/B/C/D: Ctrl-Alt-<arrow> */
 		/* ESC [ 1 ; 8 x, where x = A/B/C/D: Ctrl-Alt-Shift-<arrow> */
-		'[','H'        |0x80,KEYCODE_HOME    , /* xterm */
-		'[','F'        |0x80,KEYCODE_END     , /* xterm */
+		'[','H'        |0x80, (char) KEYCODE_HOME    , /* xterm */
+		'[','F'        |0x80, (char) KEYCODE_END     , /* xterm */
 		/* [ESC] ESC [ [2] H - [Alt-][Shift-]Home (End similarly?) */
-		/* '[','Z'        |0x80,KEYCODE_SHIFT_TAB, */
-		'[','1','~'    |0x80,KEYCODE_HOME    , /* vt100? linux vt? or what? */
-		'[','2','~'    |0x80,KEYCODE_INSERT  ,
+		/* '[','Z'        |0x80, (char) KEYCODE_SHIFT_TAB, */
+		'[','1','~'    |0x80, (char) KEYCODE_HOME    , /* vt100? linux vt? or what? */
+		'[','2','~'    |0x80, (char) KEYCODE_INSERT  ,
 		/* ESC [ 2 ; 3 ~ - Alt-Insert */
-		'[','3','~'    |0x80,KEYCODE_DELETE  ,
+		'[','3','~'    |0x80, (char) KEYCODE_DELETE  ,
 		/* [ESC] ESC [ 3 [;2] ~ - [Alt-][Shift-]Delete */
 		/* ESC [ 3 ; 3 ~ - Alt-Delete */
 		/* ESC [ 3 ; 5 ~ - Ctrl-Delete */
-		'[','4','~'    |0x80,KEYCODE_END     , /* vt100? linux vt? or what? */
-		'[','5','~'    |0x80,KEYCODE_PAGEUP  ,
+		'[','4','~'    |0x80, (char) KEYCODE_END     , /* vt100? linux vt? or what? */
+		'[','5','~'    |0x80, (char) KEYCODE_PAGEUP  ,
 		/* ESC [ 5 ; 3 ~ - Alt-PgUp */
 		/* ESC [ 5 ; 5 ~ - Ctrl-PgUp */
 		/* ESC [ 5 ; 7 ~ - Ctrl-Alt-PgUp */
-		'[','6','~'    |0x80,KEYCODE_PAGEDOWN,
-		'[','7','~'    |0x80,KEYCODE_HOME    , /* vt100? linux vt? or what? */
-		'[','8','~'    |0x80,KEYCODE_END     , /* vt100? linux vt? or what? */
+		'[','6','~'    |0x80, (char) KEYCODE_PAGEDOWN,
+		'[','7','~'    |0x80, (char) KEYCODE_HOME    , /* vt100? linux vt? or what? */
+		'[','8','~'    |0x80, (char) KEYCODE_END     , /* vt100? linux vt? or what? */
 #if 0
-		'[','1','1','~'|0x80,KEYCODE_FUN1    , /* old xterm, deprecated by ESC O P */
-		'[','1','2','~'|0x80,KEYCODE_FUN2    , /* old xterm... */
-		'[','1','3','~'|0x80,KEYCODE_FUN3    , /* old xterm... */
-		'[','1','4','~'|0x80,KEYCODE_FUN4    , /* old xterm... */
-		'[','1','5','~'|0x80,KEYCODE_FUN5    ,
+		'[','1','1','~'|0x80, (char) KEYCODE_FUN1    , /* old xterm, deprecated by ESC O P */
+		'[','1','2','~'|0x80, (char) KEYCODE_FUN2    , /* old xterm... */
+		'[','1','3','~'|0x80, (char) KEYCODE_FUN3    , /* old xterm... */
+		'[','1','4','~'|0x80, (char) KEYCODE_FUN4    , /* old xterm... */
+		'[','1','5','~'|0x80, (char) KEYCODE_FUN5    ,
 		/* [ESC] ESC [ 1 5 [;2] ~ - [Alt-][Shift-]F5 */
-		'[','1','7','~'|0x80,KEYCODE_FUN6    ,
-		'[','1','8','~'|0x80,KEYCODE_FUN7    ,
-		'[','1','9','~'|0x80,KEYCODE_FUN8    ,
-		'[','2','0','~'|0x80,KEYCODE_FUN9    ,
-		'[','2','1','~'|0x80,KEYCODE_FUN10   ,
-		'[','2','3','~'|0x80,KEYCODE_FUN11   ,
-		'[','2','4','~'|0x80,KEYCODE_FUN12   ,
+		'[','1','7','~'|0x80, (char) KEYCODE_FUN6    ,
+		'[','1','8','~'|0x80, (char) KEYCODE_FUN7    ,
+		'[','1','9','~'|0x80, (char) KEYCODE_FUN8    ,
+		'[','2','0','~'|0x80, (char) KEYCODE_FUN9    ,
+		'[','2','1','~'|0x80, (char) KEYCODE_FUN10   ,
+		'[','2','3','~'|0x80, (char) KEYCODE_FUN11   ,
+		'[','2','4','~'|0x80, (char) KEYCODE_FUN12   ,
 		/* ESC [ 2 4 ; 2 ~ - Shift-F12 */
 		/* ESC [ 2 4 ; 3 ~ - Alt-F12 */
 		/* ESC [ 2 4 ; 4 ~ - Alt-Shift-F12 */
 		/* ESC [ 2 4 ; 5 ~ - Ctrl-F12 */
 		/* ESC [ 2 4 ; 6 ~ - Ctrl-Shift-F12 */
 #endif
-		/* '[','1',';','5','A' |0x80,KEYCODE_CTRL_UP   , - unused */
-		/* '[','1',';','5','B' |0x80,KEYCODE_CTRL_DOWN , - unused */
-		'[','1',';','5','C' |0x80,KEYCODE_CTRL_RIGHT,
-		'[','1',';','5','D' |0x80,KEYCODE_CTRL_LEFT ,
-		/* '[','1',';','3','A' |0x80,KEYCODE_ALT_UP    , - unused */
-		/* '[','1',';','3','B' |0x80,KEYCODE_ALT_DOWN  , - unused */
-		'[','1',';','3','C' |0x80,KEYCODE_ALT_RIGHT,
-		'[','1',';','3','D' |0x80,KEYCODE_ALT_LEFT ,
-		/* '[','3',';','3','~' |0x80,KEYCODE_ALT_DELETE, - unused */
+		/* '[','1',';','5','A' |0x80, (char) KEYCODE_CTRL_UP   , - unused */
+		/* '[','1',';','5','B' |0x80, (char) KEYCODE_CTRL_DOWN , - unused */
+		'[','1',';','5','C' |0x80, (char) KEYCODE_CTRL_RIGHT,
+		'[','1',';','5','D' |0x80, (char) KEYCODE_CTRL_LEFT ,
+		/* '[','1',';','3','A' |0x80, (char) KEYCODE_ALT_UP    , - unused */
+		/* '[','1',';','3','B' |0x80, (char) KEYCODE_ALT_DOWN  , - unused */
+		'[','1',';','3','C' |0x80, (char) KEYCODE_ALT_RIGHT,
+		'[','1',';','3','D' |0x80, (char) KEYCODE_ALT_LEFT ,
+		/* '[','3',';','3','~' |0x80, (char) KEYCODE_ALT_DELETE, - unused */
 		0
 	};
 #ifdef RT_USING_POSIX
@@ -505,7 +505,7 @@ int64_t read_key(int fd, char *buffer, int timeout)
 
 			buffer[-1] = 0;
 			/* Pack into "1 <row15bits> <col16bits>" 32-bit sequence */
-			col |= (((-1 << 15) | row) << 16);
+			col |= ((((unsigned long)(-1) << 15) | row) << 16);
 			/* Return it in high-order word */
 			return ((int64_t) col << 32) | (uint32_t)KEYCODE_CURSOR_POS;
 		}

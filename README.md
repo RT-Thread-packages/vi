@@ -1,52 +1,54 @@
-# vi #
+# vi
 
-## 1. 简介 ##
+[中文页](README_ZH.md) | English
 
-vi 是类 unix 平台下著名的的文本编辑器。本软件包是 vi 对 RT-Thread 操作系统的移植，源自 busybox 中的 vi 编辑器，仅实现基本编辑功能。
+## 1. Introduction
 
-### 1.1. 文件结构 ###
+vi is a well-known text editor under Unix-like platforms. This software package is a port of vi to RT-Thread operating system, derived from the vi editor in busybox, and only implements basic editing functions.
 
-| 名称 | 说明 |
+### 1.1. File structure
+
+| Name | Description |
 | ---- | ---- |
-| vi.c  |  vi 编辑器源文件 |
+| vi.c | vi editor source file |
 
-### 1.2 许可证 ###
+### 1.2 License
 
-vi 遵循 LGPLv2.1 许可，详见 `LICENSE` 文件。
+vi follows the LGPLv2.1 license, see the `LICENSE` file for details.
 
-### 1.3 依赖 ###
+### 1.3 Dependency
 
 - RT_Thread DFS
 - RT_Thread libc
-- RT_Thread optparse 软件包
+- RT_Thread optparse package
 
-## 2. 获取方式 ##
+## 2. How to Obtain
 
-vi 软件包需开启 DFS、libc 功能和 optparse 软件包。
+The vi software package needs to enable DFS, libc function and optparse software package.
 
-先要开启 DFS 功能， 具体路径如下所示：
+First enable the DFS function, the specific path is as follows:
 
-    RT-Thread Components  --->
-        Device virtual file system  --->
+    RT-Thread Components --->
+        Device virtual file system --->
              [*] Using device virtual file system
 
-然后开启 libc 功能， 具体路径如下所示：
+Then open the libc function, the specific path is as follows:
 
-    RT-Thread Components  --->
-        POSIX layer and C standard library  --->
+    RT-Thread Components --->
+        POSIX layer and C standard library --->
              [*] Enable libc APIs from toolchain
 
-最后开启 optparse 软件包， 具体路径如下所示：
+Finally, open the optparse package, the specific path is as follows:
 
-     RT-Thread online packages  --->
-        miscellaneous packages  --->
+     RT-Thread online packages --->
+        miscellaneous packages --->
             [*] optparse: a public domain, portable, reentrant, embeddable, getopt-like option parser
 
-## 3. 注意事项 ##
+## 3. Matters needing attention
 
-- 仅使用 keil 和 gcc 测试，IAR 暂未测试
+- Only use keil and gcc to test, IAR not tested yet
 
-## 4. 联系方式 ##
+## 4. Contact information
 
-- 维护：RT-Thread 开发团队及社区开发者
-- 主页：<https://github.com/RT-Thread-packages/vi>
+- Maintenance: RT-Thread development team and community developers
+- Homepage: <https://github.com/RT-Thread-packages/vi>

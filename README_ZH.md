@@ -52,3 +52,4 @@ vi 软件包需开启 DFS、libc 功能和 optparse 软件包。
 
 - 维护：RT-Thread 开发团队及社区开发者
 - 主页：<https://github.com/RT-Thread-packages/vi>
+- 官方仓库：https://github.com/mirror/busybox/blob/master/editors/vi.c

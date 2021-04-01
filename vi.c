@@ -152,12 +152,8 @@
 //config:     Unless you want more (or less) frequent "undo points" while typing,
 //config:     you should probably leave this unchanged.
 
-//applet:IF_VI(APPLET(vi, BB_DIR_BIN, BB_SUID_DROP))
-
-//kbuild:lib-$(CONFIG_VI) += vi.o
-
 //usage:#define vi_trivial_usage
-//usage:       "[OPTIONS] [FILE]..."
+//usage:       IF_FEATURE_VI_COLON("[-c CMD] ")IF_FEATURE_VI_READONLY("[-R] ")"[FILE]..."
 //usage:#define vi_full_usage "\n\n"
 //usage:       "Edit FILE\n"
 //usage:    IF_FEATURE_VI_COLON(
@@ -168,6 +164,10 @@
 //usage:    )
 //usage:     "\n    -H  List available features"
 
+
+#include <rtthread.h>
+#include <shell.h>
+#include <optparse.h>
 #include "vi_utils.h"
 
 /* This struct is deliberately not defined. */
@@ -628,7 +628,6 @@ static void write1(const char *out)
     fputs(out, stdout);
 }
 
-static int vi_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 static int vi_main(int argc, char **argv)
 {
     int c;
@@ -2871,6 +2870,7 @@ static int mysleep(int hund)    // sleep for 'hund' 1/100 seconds or stdin ready
     return safe_poll(pfd, 1, hund*10) > 0;
 }
 #else
+extern struct finsh_shell *shell;
 static int mysleep(int hund)
 {
     if (hund != 0)
@@ -2896,7 +2896,7 @@ static int readit(void) // read (maybe cursor) key from stdin
             goto again;
         go_bottom_and_clear_to_eol();
         cookmode(); // terminal to "cooked"
-        bb_error_msg_and_die("can't read user input");
+        bb_simple_error_msg_and_die("can't read user input");
     }
     return c;
 }
@@ -4579,11 +4579,4 @@ static void crash_test()
     }
 }
 #endif
-static int vi(char *arg)
-{
-    char *argv[]={"vi",arg, 0, 0};
-    vi_main(2, argv);
-    return 0;
-}
-FINSH_FUNCTION_EXPORT(vi, vi A small 'vi' clone);
-FINSH_FUNCTION_EXPORT_ALIAS(vi_main, __cmd_vi, vi A small 'vi' clone);
+MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);

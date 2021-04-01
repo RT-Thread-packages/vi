@@ -1,8 +1,6 @@
 #ifndef __VI_UTILS_H__
 #define __VI_UTILS_H__
 
-#include <rtthread.h>
-#include <shell.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -20,19 +18,15 @@
 #include <sys/types.h>
 #endif
 
-#include <optparse.h>
-
 #define FAST_FUNC
-#define BB_VER "1.29.3"
-#define BB_BT "rtt"
-#define MAIN_EXTERNALLY_VISIBLE
-#define NOINLINE
+#define BB_VER "latest: 2021-03-30"
+#define BB_BT "busybox vi"
 #define xmalloc malloc
 #define xrealloc realloc
 #define xstrdup strdup
 #define fflush_all() fflush(NULL)
 #define bb_putchar putchar
-#define bb_error_msg_and_die(...) printf(__VA_ARGS__)
+#define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
 
 #ifdef VI_MAX_LEN
 #define CONFIG_FEATURE_VI_MAX_LEN VI_MAX_LEN
@@ -271,17 +265,9 @@ int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *heigh
 char* FAST_FUNC strchrnul(const char *s, int c);
 #endif
 
-#ifdef __GNUC__
-int strncasecmp(const char *s1, const char *s2, size_t n);
-int strcasecmp (const char *s1, const char *s2);
-char * strdup(const char *s);
-#endif
-
 void* xzalloc(size_t size);
 void bb_show_usage(void);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
-
-extern struct finsh_shell *shell;
 
 #endif

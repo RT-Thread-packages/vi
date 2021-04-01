@@ -9,7 +9,7 @@ char* FAST_FUNC xstrndup(const char *s, int n)
     char *t;
 
     if (ENABLE_DEBUG && s == NULL)
-        bb_error_msg_and_die("xstrndup bug");
+        bb_simple_error_msg_and_die("xstrndup bug");
 
     /* We can just xmalloc(n+1) and strncpy into it, */
     /* but think about xstrndup("abc", 10000) wastage! */

@@ -21,32 +21,6 @@ int index_in_strings(const char *strings, const char *key)
 }
 
 #ifdef VI_ENABLE_COLON
-// Die if we can't allocate n+1 bytes (space for the null terminator) and copy
-// the (possibly truncated to length n) string into it.
-char* xstrndup(const char *s, int n)
-{
-    int m;
-    char *t;
-
-    if (ENABLE_DEBUG && s == NULL)
-        bb_simple_error_msg_and_die("xstrndup bug");
-
-    /* We can just xmalloc(n+1) and strncpy into it, */
-    /* but think about xstrndup("abc", 10000) wastage! */
-    m = n;
-    t = (char*) s;
-    while (m) {
-        if (!*t) break;
-        m--;
-        t++;
-    }
-    n -= m;
-    t = xmalloc(n + 1);
-    t[n] = '\0';
-
-    return memcpy(t, s, n);
-}
-
 char* last_char_is(const char *s, int c)
 {
     if (s && *s) {
@@ -71,6 +45,7 @@ void *memrchr(const void* ptr, int ch, size_t pos)
     }
     return (*end == ch)?(end):(NULL);
 }
+
 int isblank(int ch)
 {
     if (ch == ' ' || ch == '\t')

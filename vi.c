@@ -542,7 +542,7 @@ static int vi_main(int argc, char **argv)
             // fall through
         default:
             bb_show_usage();
-            free(ptr_to_globals);
+            FREE_PTR_TO_GLOBALS(); // RT-Thread team added
             return 1;
         }
     }
@@ -568,6 +568,8 @@ static int vi_main(int argc, char **argv)
 #ifndef RT_USING_POSIX
     wait_read(STDIN_FILENO, status_buffer, STATUS_BUFFER_LEN, 0);
 #endif
+
+    /* RT-Thread team added */
     free(text);
     free(screen);
     free(current_filename);
@@ -577,8 +579,9 @@ static int vi_main(int argc, char **argv)
 #if ENABLE_FEATURE_VI_SEARCH
     free(last_search_pattern);
 #endif
-    free(ptr_to_globals);
+    FREE_PTR_TO_GLOBALS();
     fflush_all();
+
     return 0;
 }
 

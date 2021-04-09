@@ -23,6 +23,7 @@
 #define xmalloc malloc
 #define xrealloc realloc
 #define xstrdup strdup
+#define xstrndup strndup
 #define bb_putchar putchar
 #define bb_strtou strtoul
 #define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
@@ -355,7 +356,6 @@ int isatty (int  fd);
 char* strchrnul(const char *s, int c);
 #endif
 #ifdef VI_ENABLE_COLON
-char* xstrndup(const char *s, int n);
 char* last_char_is(const char *s, int c);
 #endif
 

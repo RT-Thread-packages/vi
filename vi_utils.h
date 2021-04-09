@@ -23,10 +23,10 @@
 #define xmalloc malloc
 #define xrealloc realloc
 #define xstrdup strdup
-#define fflush_all() fflush(NULL)
 #define bb_putchar putchar
-#define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
 #define bb_strtou strtoul
+#define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
+#define fflush_all() fflush(NULL)
 
 #ifdef VI_MAX_LEN
 #define CONFIG_FEATURE_VI_MAX_LEN VI_MAX_LEN

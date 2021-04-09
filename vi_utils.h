@@ -384,7 +384,7 @@ int wait_read(int fd, void *buf, size_t len, int timeout);
 int index_in_strings(const char *strings, const char *key);
 
 #ifdef VI_ENABLE_WIN_RESIZE
-int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *height);
+int get_terminal_width_height(int fd, unsigned *width, unsigned *height);
 #endif
 
 //config: TODO for RT-Thread

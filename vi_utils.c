@@ -1,13 +1,29 @@
 #include "vi_utils.h"
 
-#ifndef RT_USING_POSIX
-extern struct finsh_shell *shell;
-#endif
+int index_in_strings(const char *strings, const char *key)
+{
+    int j, idx = 0;
+
+    while (*strings) {
+        /* Do we see "key\0" at current position in strings? */
+        for (j = 0; *strings == key[j]; ++j) {
+            if (*strings++ == '\0') {
+                //bb_error_msg("found:'%s' i:%u", key, idx);
+                return idx; /* yes */
+            }
+        }
+        /* No.  Move to the start of the next string. */
+        while (*strings++ != '\0')
+            continue;
+        idx++;
+    }
+    return -1;
+}
 
 #ifdef VI_ENABLE_COLON
 // Die if we can't allocate n+1 bytes (space for the null terminator) and copy
 // the (possibly truncated to length n) string into it.
-char* FAST_FUNC xstrndup(const char *s, int n)
+char* xstrndup(const char *s, int n)
 {
     int m;
     char *t;
@@ -64,7 +80,7 @@ int isblank(int ch)
 #endif
 
 #ifdef VI_ENABLE_SETOPTS
-char* FAST_FUNC skip_whitespace(const char *s)
+char* skip_whitespace(const char *s)
 {
     /* In POSIX/C locale (the only locale we care about: do we REALLY want
      * to allow Unicode whitespace in, say, .conf files? nuts!)
@@ -78,7 +94,7 @@ char* FAST_FUNC skip_whitespace(const char *s)
     return (char *) s;
 }
 
-char* FAST_FUNC skip_non_whitespace(const char *s)
+char* skip_non_whitespace(const char *s)
 {
     while (*s != '\0' && *s != ' ' && (unsigned char)(*s - 9) > (13 - 9))
         s++;
@@ -104,7 +120,7 @@ int safe_read(int fd, void *buf, size_t count)
     return n;
 }
 
-ssize_t FAST_FUNC safe_write(int fd, const void *buf, size_t count)
+ssize_t safe_write(int fd, const void *buf, size_t count)
 {
     ssize_t n;
 
@@ -149,7 +165,7 @@ int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
  * This does multiple writes as necessary.
  * Returns the amount written, or -1 on an error.
  */
-ssize_t FAST_FUNC full_write(int fd, const void *buf, size_t len)
+ssize_t full_write(int fd, const void *buf, size_t len)
 {
     ssize_t cc;
     ssize_t total;
@@ -182,7 +198,7 @@ ssize_t FAST_FUNC full_write(int fd, const void *buf, size_t len)
  * Returns the amount read, or -1 on an error.
  * A short read is returned on an end of file.
  */
-ssize_t FAST_FUNC full_read(int fd, void *buf, size_t len)
+ssize_t full_read(int fd, void *buf, size_t len)
 {
     ssize_t cc;
     ssize_t total;

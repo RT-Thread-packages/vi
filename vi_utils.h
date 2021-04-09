@@ -18,15 +18,15 @@
 #include <sys/types.h>
 #endif
 
-#define FAST_FUNC
 #define BB_VER "latest: 2021-03-30"
 #define BB_BT "busybox vi"
 #define xmalloc malloc
 #define xrealloc realloc
 #define xstrdup strdup
-#define fflush_all() fflush(NULL)
 #define bb_putchar putchar
+#define bb_strtou strtoul
 #define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
+#define fflush_all() fflush(NULL)
 
 #ifdef VI_MAX_LEN
 #define CONFIG_FEATURE_VI_MAX_LEN VI_MAX_LEN
@@ -236,21 +236,21 @@ int isatty (int  fd);
 
 #define ENABLE_DEBUG 1
 #ifdef VI_ENABLE_COLON
-char* FAST_FUNC xstrndup(const char *s, int n);
+char* xstrndup(const char *s, int n);
 char* last_char_is(const char *s, int c);
 #endif
 
 #ifdef VI_ENABLE_SETOPTS
-char* FAST_FUNC skip_whitespace(const char *s);
-char* FAST_FUNC skip_non_whitespace(const char *s);
+char* skip_whitespace(const char *s);
+char* skip_non_whitespace(const char *s);
 #endif
 
 #ifdef RT_USING_POSIX
 void bb_perror_msg(const char *s, ...);
 int safe_read(int fd, void *buf, size_t count);
 int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout);
-ssize_t FAST_FUNC full_write(int fd, const void *buf, size_t len);
-ssize_t FAST_FUNC full_read(int fd, void *buf, size_t len);
+ssize_t full_write(int fd, const void *buf, size_t len);
+ssize_t full_read(int fd, void *buf, size_t len);
 #else
 int wait_read(int fd, void *buf, size_t len, int timeout);
 #define full_read read
@@ -262,8 +262,10 @@ int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *heigh
 #endif
 
 #ifdef VI_ENABLE_SEARCH
-char* FAST_FUNC strchrnul(const char *s, int c);
+char* strchrnul(const char *s, int c);
 #endif
+
+int index_in_strings(const char *strings, const char *key);
 
 void* xzalloc(size_t size);
 void bb_show_usage(void);

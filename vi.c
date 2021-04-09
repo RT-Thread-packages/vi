@@ -176,8 +176,9 @@ struct globals {
     int tabstop;
     int last_search_char;    // last char searched for (int because of Unicode)
     smallint last_search_cmd;    // command used to invoke last char search
-    char erase_char;         // the users erase character
+#if ENABLE_FEATURE_VI_CRASHME
     char last_input_char;    // last char read from user
+#endif
 
 #if ENABLE_FEATURE_VI_DOT_CMD
     smallint adding2q;   // are we currently adding user input to q
@@ -207,7 +208,7 @@ struct globals {
 #if ENABLE_FEATURE_VI_USE_SIGNALS
     sigjmp_buf restart;     // int_handler() jumps to location remembered here
 #endif
-#if 0
+#if 0 // RT-Thread team added
     struct termios term_orig; // remember what the cooked mode was
 #endif
     int cindex;               // saved character index for up/down motion
@@ -296,8 +297,9 @@ struct globals {
 #define tabstop                 (G.tabstop            )
 #define last_search_char        (G.last_search_char   )
 #define last_search_cmd         (G.last_search_cmd    )
-#define erase_char              (G.erase_char         )
+#if ENABLE_FEATURE_VI_CRASHME
 #define last_input_char         (G.last_input_char    )
+#endif
 #if ENABLE_FEATURE_VI_READONLY
 #define readonly_mode           (G.readonly_mode      )
 #else
@@ -346,6 +348,12 @@ struct globals {
     IF_FEATURE_VI_SEARCH(last_search_pattern = xzalloc(2);) \
 } while (0)
 
+/* RT-Thread team added */
+#define DELETE_G() do { \
+    FREE_PTR_TO_GLOBALS(); \
+    /* "" but has space for 2 chars: */ \
+    IF_FEATURE_VI_SEARCH(free(last_search_pattern);) \
+} while (0)
 
 static void edit_file(char *);  // edit one file
 static void do_cmd(int);    // execute a command
@@ -518,7 +526,7 @@ static int vi_main(int argc, char **argv)
             initial_cmds[0] = xstrndup(p, MAX_INPUT_LEN);
     }
 #endif
-    optparse_init(&options, argv);
+    optparse_init(&options, argv); // RT-Thread team added
     while ((c = optparse(&options, "hCRH" IF_FEATURE_VI_COLON("c:"))) != -1) {
         switch (c) {
 #if ENABLE_FEATURE_VI_CRASHME
@@ -560,7 +568,7 @@ static int vi_main(int argc, char **argv)
         // NB: optind can be changed by ":next" and ":rewind" commands
         options.optind++;
         file_name = optparse_arg(&options);
-        if (file_name == 0 || options.optind >= cmdline_filecnt)
+        if (options.optind >= cmdline_filecnt)
             break;
     }
     // "Use normal screen buffer, restore cursor"
@@ -570,18 +578,14 @@ static int vi_main(int argc, char **argv)
 #endif
 
     /* RT-Thread team added */
+    fflush_all();
     free(text);
     free(screen);
     free(current_filename);
 #if ENABLE_FEATURE_VI_DOT_CMD
     free(ioq_start);
 #endif
-#if ENABLE_FEATURE_VI_SEARCH
-    free(last_search_pattern);
-#endif
-    FREE_PTR_TO_GLOBALS();
-    fflush_all();
-
+    DELETE_G();
     return 0;
 }
 
@@ -671,8 +675,10 @@ static void edit_file(char *fn)
     mark[26] = mark[27] = text; // init "previous context"
 #endif
 
-    last_search_char = last_input_char = '\0';
-
+    last_search_char = '\0';
+#if ENABLE_FEATURE_VI_CRASHME
+    last_input_char = '\0';
+#endif
     crow = 0;
     ccol = 0;
 
@@ -736,7 +742,10 @@ static void edit_file(char *fn)
             }
         }
 #endif
-        last_input_char = c = get_one_char();   // get a cmd from user
+        c = get_one_char(); // get a cmd from user
+#if ENABLE_FEATURE_VI_CRASHME
+        last_input_char = c;
+#endif
 #if ENABLE_FEATURE_VI_YANKMARK
         // save a copy of the current line- for the 'U" command
         if (begin_line(dot) != cur_line) {
@@ -1944,9 +1953,12 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
         if ((p[-1] != '\n') && (dot > text)) {
             p--;
         }
-    } else if (c == erase_char || c == 8 || c == 127) { // Is this a BS
-        //     123456789
-        if ((p[-1] != '\n') && (dot>text)) {
+    } else if (
+        #if 0 // RT-Thread team added
+            c == term_orig.c_cc[VERASE] ||
+        #endif
+            c == 8 || c == 127) { // Is this a BS
+        if (p > text) {
             p--;
             p = text_hole_delete(p, p, ALLOW_UNDO_QUEUED);  // shrink buffer 1 char
         }
@@ -2670,11 +2682,9 @@ static char *swap_context(char *p) // goto new context for '' command make this 
 //----- Set terminal attributes --------------------------------
 static void rawmode(void)
 {
-#if 0
+#if 0 // RT-Thread team added
     // no TERMIOS_CLEAR_ISIG: leave ISIG on - allow signals
     set_termios_to_raw(STDIN_FILENO, &term_orig, TERMIOS_RAW_CRNL);
-#else
-    erase_char = 0177;
 #endif
 }
 
@@ -2847,7 +2857,11 @@ static char *get_input_line(const char *prompt)
         c = get_one_char();
         if (c == '\n' || c == '\r' || c == 27)
             break;      // this is end of input
-        if (c == erase_char || c == 8 || c == 127) {
+        if (
+            #if 0 // RT-Thread team added
+                c == term_orig.c_cc[VERASE] ||
+            #endif
+                c == 8 || c == 127) {
             // user wants to erase prev char
             buf[--i] = '\0';
             write1("\b \b"); // erase char on screen

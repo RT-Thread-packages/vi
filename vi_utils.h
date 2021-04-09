@@ -28,15 +28,31 @@
 #define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
 #define fflush_all() fflush(NULL)
 
+//config:config FEATURE_VI_MAX_LEN
+//config:   int "Maximum screen width in vi"
+//config:   range 256 16384
+//config:   default 4096
+//config:   depends on VI
+//config:   help
+//config:     Contrary to what you may think, this is not eating much.
+//config:     Make it smaller than 4k only if you are very limited on memory.
 #ifdef VI_MAX_LEN
 #define CONFIG_FEATURE_VI_MAX_LEN VI_MAX_LEN
 #else
 #define CONFIG_FEATURE_VI_MAX_LEN 4096
 #endif
 
-#define ENABLE_FEATURE_EDITING_ASK_TERMINAL 0
-#define ENABLE_FEATURE_LESS_ASK_TERMINAL 0
-
+//config:config FEATURE_VI_ASK_TERMINAL
+//config:   bool "Use 'tell me cursor position' ESC sequence to measure window"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     If terminal size can't be retrieved and $LINES/$COLUMNS are not set,
+//config:     this option makes vi perform a last-ditch effort to find it:
+//config:     position cursor to 999,999 and ask terminal to report real
+//config:     cursor position using "ESC [ 6 n" escape sequence, then read stdin.
+//config:
+//config:     This is not clean but helps a lot on serial lines and such.
 #ifdef VI_ENABLE_VI_ASK_TERMINAL
 #define ENABLE_FEATURE_VI_ASK_TERMINAL 1
 #define IF_FEATURE_VI_ASK_TERMINAL(...) __VA_ARGS__
@@ -45,6 +61,13 @@
 #define IF_FEATURE_VI_ASK_TERMINAL(...)
 #endif
 
+//config:config FEATURE_VI_COLON
+//config:   bool "Enable \":\" colon commands (no \"ex\" mode)"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Enable a limited set of colon commands for vi. This does not
+//config:     provide an "ex" mode.
 #ifdef VI_ENABLE_COLON
 #define ENABLE_FEATURE_VI_COLON 1
 #define IF_FEATURE_VI_COLON(...) __VA_ARGS__
@@ -53,6 +76,13 @@
 #define IF_FEATURE_VI_COLON(...)
 #endif
 
+//config:config FEATURE_VI_SEARCH
+//config:   bool "Enable search and replace cmds"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Select this if you wish to be able to do search and replace in
+//config:     busybox vi.
 #ifdef VI_ENABLE_SEARCH
 #define ENABLE_FEATURE_VI_SEARCH 1
 #define IF_FEATURE_VI_SEARCH(...) __VA_ARGS__
@@ -61,6 +91,13 @@
 #define IF_FEATURE_VI_SEARCH(...)
 #endif
 
+//config:config FEATURE_VI_READONLY
+//config:   bool "Enable -R option and \"view\" mode"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Enable the read-only command line option, which allows the user to
+//config:     open a file in read-only mode.
 #ifdef VI_ENABLE_READONLY
 #define ENABLE_FEATURE_VI_READONLY 1
 #define IF_FEATURE_VI_READONLY(...) __VA_ARGS__
@@ -69,6 +106,12 @@
 #define IF_FEATURE_VI_READONLY(...)
 #endif
 
+//config:config FEATURE_VI_SET
+//config:   bool "Support for :set"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Support for ":set".
 #ifdef VI_ENABLE_SET
 #define ENABLE_FEATURE_VI_SET 1
 #define IF_FEATURE_VI_SET(...) __VA_ARGS__
@@ -77,6 +120,12 @@
 #define IF_FEATURE_VI_SET(...)
 #endif
 
+//config:config FEATURE_VI_SETOPTS
+//config:   bool "Enable set-able options, ai ic showmatch"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Enable the editor to set some (ai, ic, showmatch) options.
 #ifdef VI_ENABLE_SETOPTS
 #define ENABLE_FEATURE_VI_SETOPTS 1
 #define IF_FEATURE_VI_SETOPTS(...) __VA_ARGS__
@@ -85,6 +134,13 @@
 #define IF_FEATURE_VI_SETOPTS(...)
 #endif
 
+//config:
+//config:config FEATURE_VI_WIN_RESIZE
+//config:   bool "Handle window resize"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Make busybox vi behave nicely with terminals that get resized.
 #ifdef VI_ENABLE_WIN_RESIZE
 #define ENABLE_FEATURE_VI_WIN_RESIZE 1
 #define IF_FEATURE_VI_WIN_RESIZE(...) __VA_ARGS__
@@ -93,6 +149,14 @@
 #define IF_FEATURE_VI_WIN_RESIZE(...)
 #endif
 
+//config:config FEATURE_VI_YANKMARK
+//config:   bool "Enable yank/put commands and mark cmds"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     This will enable you to use yank and put, as well as mark in
+//config:     busybox vi.
+//config:
 #ifdef VI_ENABLE_YANKMARK
 #define ENABLE_FEATURE_VI_YANKMARK 1
 #define IF_FEATURE_VI_YANKMARK(...) __VA_ARGS__
@@ -102,6 +166,12 @@
 #define IF_FEATURE_VI_YANKMARK(...)
 #endif
 
+//config:config FEATURE_VI_DOT_CMD
+//config:   bool "Remember previous cmd and \".\" cmd"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Make busybox vi remember the last command and be able to repeat it.
 #ifdef VI_ENABLE_DOT_CMD
 #define ENABLE_FEATURE_VI_DOT_CMD 1
 #define IF_FEATURE_VI_DOT_CMD(...) __VA_ARGS__
@@ -110,6 +180,13 @@
 #define IF_FEATURE_VI_DOT_CMD(...)
 #endif
 
+//config:config FEATURE_VI_UNDO
+//config:   bool "Support undo command 'u'"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Support the 'u' command to undo insertion, deletion, and replacement
+//config:     of text.
 #ifdef VI_ENABLE_UNDO
 #define ENABLE_FEATURE_VI_UNDO 1
 #define IF_FEATURE_VI_UNDO(...) __VA_ARGS__
@@ -118,6 +195,29 @@
 #define IF_FEATURE_VI_UNDO(...)
 #endif
 
+//config:config FEATURE_VI_UNDO_QUEUE
+//config:   bool "Enable undo operation queuing"
+//config:   default y
+//config:   depends on FEATURE_VI_UNDO
+//config:   help
+//config:     The vi undo functions can use an intermediate queue to greatly lower
+//config:     malloc() calls and overhead. When the maximum size of this queue is
+//config:     reached, the contents of the queue are committed to the undo stack.
+//config:     This increases the size of the undo code and allows some undo
+//config:     operations (especially un-typing/backspacing) to be far more useful.
+//config:config FEATURE_VI_UNDO_QUEUE_MAX
+//config:   int "Maximum undo character queue size"
+//config:   default 256
+//config:   range 32 65536
+//config:   depends on FEATURE_VI_UNDO_QUEUE
+//config:   help
+//config:     This option sets the number of bytes used at runtime for the queue.
+//config:     Smaller values will create more undo objects and reduce the amount
+//config:     of typed or backspaced characters that are grouped into one undo
+//config:     operation; larger values increase the potential size of each undo
+//config:     and will generally malloc() larger objects and less frequently.
+//config:     Unless you want more (or less) frequent "undo points" while typing,
+//config:     you should probably leave this unchanged.
 #ifdef VI_ENABLE_UNDO_QUEUE
 #define ENABLE_FEATURE_VI_UNDO_QUEUE 1
 #define IF_FEATURE_VI_UNDO_QUEUE(...) __VA_ARGS__
@@ -135,6 +235,12 @@
 #define IF_FEATURE_VI_SEARCH(...)
 #endif
 
+//config:config FEATURE_VI_REGEX_SEARCH
+//config:   bool "Enable regex in search and replace"
+//config:   default n   # Uses GNU regex, which may be unavailable. FIXME
+//config:   depends on FEATURE_VI_SEARCH
+//config:   help
+//config:     Use extended regex search.
 #ifdef VI_ENABLE_REGEX_SEARCH
 #define ENABLE_FEATURE_VI_REGEX_SEARCH 1
 #define IF_FEATURE_VI_REGEX_SEARCH(...) __VA_ARGS__
@@ -143,6 +249,15 @@
 #define IF_FEATURE_VI_REGEX_SEARCH(...)
 #endif
 
+//config:config FEATURE_VI_8BIT
+//config:   bool "Allow vi to display 8-bit chars (otherwise shows dots)"
+//config:   default n
+//config:   depends on VI
+//config:   help
+//config:     If your terminal can display characters with high bit set,
+//config:     you may want to enable this. Note: vi is not Unicode-capable.
+//config:     If your terminal combines several 8-bit bytes into one character
+//config:     (as in Unicode mode), this will not work properly.
 #ifdef VI_ENABLE_8BIT
 #define ENABLE_FEATURE_VI_8BIT 1
 #define IF_FEATURE_VI_8BIT(...) __VA_ARGS__
@@ -235,10 +350,19 @@ int isatty (int  fd);
 #endif
 
 #define ENABLE_DEBUG 1
+
+#ifdef VI_ENABLE_SEARCH
+char* strchrnul(const char *s, int c);
+#endif
 #ifdef VI_ENABLE_COLON
 char* xstrndup(const char *s, int n);
 char* last_char_is(const char *s, int c);
 #endif
+
+void* xzalloc(size_t size);
+void bb_show_usage(void);
+int64_t read_key(int fd, char *buffer, int timeout);
+void *memrchr(const void* ptr, int ch, size_t pos);
 
 #ifdef VI_ENABLE_SETOPTS
 char* skip_whitespace(const char *s);
@@ -257,19 +381,20 @@ int wait_read(int fd, void *buf, size_t len, int timeout);
 #define full_write write
 #endif
 
+int index_in_strings(const char *strings, const char *key);
+
 #ifdef VI_ENABLE_WIN_RESIZE
 int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *height);
 #endif
 
-#ifdef VI_ENABLE_SEARCH
-char* strchrnul(const char *s, int c);
-#endif
-
-int index_in_strings(const char *strings, const char *key);
-
-void* xzalloc(size_t size);
-void bb_show_usage(void);
-int64_t read_key(int fd, char *buffer, int timeout);
-void *memrchr(const void* ptr, int ch, size_t pos);
+//config: TODO for RT-Thread
+//config:config FEATURE_VI_USE_SIGNALS
+//config:   bool "Catch signals"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:     Selecting this option will make busybox vi signal aware. This will
+//config:     make busybox vi support SIGWINCH to deal with Window Changes, catch
+//config:     Ctrl-Z and Ctrl-C and alarms.
 
 #endif

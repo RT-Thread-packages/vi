@@ -578,7 +578,7 @@ static int wh_helper(int value, int def_val, const char *env_name, int *err)
     return value;
 }
 
-int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *height)
+int get_terminal_width_height(int fd, unsigned *width, unsigned *height)
 {
     struct winsize win;
     int err;
@@ -615,7 +615,7 @@ int FAST_FUNC get_terminal_width_height(int fd, unsigned *width, unsigned *heigh
 #endif
 
 #if defined(VI_ENABLE_SEARCH) && !defined(__GNUC__)
-char* FAST_FUNC strchrnul(const char *s, int c)
+char* strchrnul(const char *s, int c)
 {
     while (*s != '\0' && *s != c)
         s++;

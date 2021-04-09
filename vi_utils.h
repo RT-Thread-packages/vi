@@ -267,6 +267,8 @@
 #define IF_FEATURE_VI_8BIT(...)
 #endif
 
+#define ENABLE_FEATURE_CLEAN_UP 1
+
 #define SET_PTR_TO_GLOBALS(x) do { \
     (*(struct globals**)&ptr_to_globals) = (void*)(x); \
     barrier(); \

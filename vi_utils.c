@@ -78,7 +78,6 @@ char* skip_non_whitespace(const char *s)
 }
 #endif
 
-#ifdef RT_USING_POSIX
 void bb_perror_msg(const char *s, ...)
 {
     rt_kprintf("%s", s);
@@ -200,25 +199,6 @@ ssize_t full_read(int fd, void *buf, size_t len)
 
     return total;
 }
-#else
-extern rt_device_t rt_console_get_device(void);
-int wait_read(int fd, void *buf, size_t len, int timeout)
-{
-    int ret = 0;
-    rt_device_t console_device = rt_console_get_device();
-    rt_sem_take(&shell->rx_sem, 0);
-    ret = rt_device_read(console_device,0,buf,len);
-    if (ret <= 0)
-    {
-        while (rt_sem_take(&shell->rx_sem, 0) == RT_EOK);
-        rt_sem_take(&shell->rx_sem, timeout);
-        ret = rt_device_read(console_device,0,buf,len);
-        if (ret <= 0)
-            errno = EAGAIN;
-    }
-    return ret;
-}
-#endif
 
 void* xzalloc(size_t size)
 {
@@ -234,9 +214,7 @@ void bb_show_usage(void)
 
 int64_t read_key(int fd, char *buffer, int timeout)
 {
-#ifdef RT_USING_POSIX
     struct pollfd pfd;
-#endif
     const char *seq;
     int n;
 
@@ -324,10 +302,8 @@ int64_t read_key(int fd, char *buffer, int timeout)
         /* '[','3',';','3','~' |0x80, (char) KEYCODE_ALT_DELETE, - unused */
         0
     };
-#ifdef RT_USING_POSIX
     pfd.fd = fd;
     pfd.events = POLLIN;
-#endif
     buffer++; /* saved chars counter is in buffer[-1] now */
 
  start_over:
@@ -339,11 +315,7 @@ int64_t read_key(int fd, char *buffer, int timeout)
          * if fd can be in non-blocking mode.
          */
         if (timeout >= -1) {
-#ifdef RT_USING_POSIX
             if (safe_poll(&pfd, 1, timeout) == 0) {
-#else
-            if (rt_sem_take(&shell->rx_sem, timeout) != RT_EOK) {
-#endif
                 /* Timed out */
                 errno = EAGAIN;
                 return -1;
@@ -355,11 +327,7 @@ int64_t read_key(int fd, char *buffer, int timeout)
          * When we were reading 3 bytes here, we were eating
          * "li" too, and cat was getting wrong input.
          */
-#ifdef RT_USING_POSIX
         n = safe_read(fd, buffer, 1);
-#else
-        n = wait_read(fd, buffer, 1, -1);
-#endif
         if (n <= 0)
             return -1;
     }
@@ -392,11 +360,7 @@ int64_t read_key(int fd, char *buffer, int timeout)
                  * so if we block for long it's not really an escape sequence.
                  * Timeout is needed to reconnect escape sequences
                  * split up by transmission over a serial console. */
-#ifdef RT_USING_POSIX
                 if (safe_poll(&pfd, 1, 50) == 0) {
-#else
-                if (0 != 0) {
-#endif
                     /* No more data!
                      * Array is sorted from shortest to longest,
                      * we can't match anything later in array -
@@ -405,11 +369,7 @@ int64_t read_key(int fd, char *buffer, int timeout)
                     goto got_all;
                 }
                 errno = 0;
-#ifdef RT_USING_POSIX
                 read_num = safe_read(fd, buffer + n, 1);
-#else
-                read_num = wait_read(fd, buffer + n, 1, 50);
-#endif
                 if (read_num <= 0) {
                     /* If EAGAIN, then fd is O_NONBLOCK and poll lied:
                      * in fact, there is no data. */
@@ -451,20 +411,12 @@ int64_t read_key(int fd, char *buffer, int timeout)
      */
     while (n < KEYCODE_BUFFER_SIZE-1) { /* 1 for count byte at buffer[-1] */
         int read_num;
-#ifdef RT_USING_POSIX
         if (safe_poll(&pfd, 1, 50) == 0) {
-#else
-        if (0 != 0) {
-#endif
             /* No more data! */
             break;
         }
         errno = 0;
-#ifdef RT_USING_POSIX
         read_num = safe_read(fd, buffer + n, 1);
-#else
-        read_num = wait_read(fd, buffer + n, 1, 50);
-#endif
         if (read_num <= 0) {
             /* If EAGAIN, then fd is O_NONBLOCK and poll lied:
              * in fact, there is no data. */

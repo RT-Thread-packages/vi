@@ -116,7 +116,6 @@ enum {
 /* vi.c expects chars to be unsigned. */
 /* busybox build system provides that, but it's better */
 /* to audit and fix the source */
-
 struct globals {
     /* many references - keep near the top of globals */
     char *text, *end;       // pointers to the user data in memory
@@ -573,9 +572,6 @@ static int vi_main(int argc, char **argv)
     }
     // "Use normal screen buffer, restore cursor"
     write1("\033[?1049l");
-#ifndef RT_USING_POSIX
-    wait_read(STDIN_FILENO, status_buffer, STATUS_BUFFER_LEN, 0);
-#endif
 
     /* RT-Thread team added */
     fflush_all();
@@ -2739,7 +2735,7 @@ static void int_handler(int sig)
     siglongjmp(restart, sig);
 }
 #endif /* FEATURE_VI_USE_SIGNALS */
-#ifdef RT_USING_POSIX
+
 static int mysleep(int hund)    // sleep for 'hund' 1/100 seconds or stdin ready
 {
     struct pollfd pfd[1];
@@ -2751,16 +2747,7 @@ static int mysleep(int hund)    // sleep for 'hund' 1/100 seconds or stdin ready
     pfd[0].events = POLLIN;
     return safe_poll(pfd, 1, hund*10) > 0;
 }
-#else
-extern struct finsh_shell *shell;
-static int mysleep(int hund)
-{
-    if (hund != 0)
-        fflush_all();
 
-    return rt_sem_take(&shell->rx_sem, hund*10) == RT_EOK;
-}
-#endif
 //----- IO Routines --------------------------------------------
 static int readit(void) // read (maybe cursor) key from stdin
 {

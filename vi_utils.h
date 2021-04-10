@@ -1,3 +1,7 @@
+/*
+ * Licensed under GPLv2 or later, see file LICENSE in this source tree.
+ */
+
 #ifndef __VI_UTILS_H__
 #define __VI_UTILS_H__
 
@@ -13,21 +17,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <dfs_posix.h>
-#ifdef RT_USING_POSIX
 #include <dfs_poll.h>
 #include <sys/types.h>
-#endif
 
 #define BB_VER "latest: 2021-03-30"
 #define BB_BT "busybox vi"
-#define xmalloc malloc
-#define xrealloc realloc
-#define xstrdup strdup
-#define xstrndup strndup
-#define bb_putchar putchar
-#define bb_strtou strtoul
-#define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
-#define fflush_all() fflush(NULL)
 
 //config:config FEATURE_VI_MAX_LEN
 //config:   int "Maximum screen width in vi"
@@ -344,41 +338,50 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
-#define ENABLE_DEBUG 1
-
-#ifdef VI_ENABLE_SEARCH
-char* strchrnul(const char *s, int c);
-#endif
-#ifdef VI_ENABLE_COLON
-char* last_char_is(const char *s, int c);
-#endif
+#define xmalloc malloc
+#define xrealloc realloc
+#define xstrdup strdup
+#define xstrndup strndup
+#define bb_putchar putchar
+#define bb_strtou strtoul
+#define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
+#define bb_simple_perror_msg(...) printf(__VA_ARGS__)
+#define fflush_all() fflush(NULL)
 
 void* xzalloc(size_t size);
 void bb_show_usage(void);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
 
+#ifdef VI_ENABLE_SEARCH
+char* strchrnul(const char *s, int c);
+#endif
+
+#ifdef VI_ENABLE_COLON
+char* last_char_is(const char *s, int c);
+#endif
+
 #ifdef VI_ENABLE_SETOPTS
 char* skip_whitespace(const char *s);
 char* skip_non_whitespace(const char *s);
 #endif
 
-#ifdef RT_USING_POSIX
-void bb_perror_msg(const char *s, ...);
+int index_in_strings(const char *strings, const char *key);
 int safe_read(int fd, void *buf, size_t count);
 int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout);
 ssize_t full_write(int fd, const void *buf, size_t len);
 ssize_t full_read(int fd, void *buf, size_t len);
-#else
-int wait_read(int fd, void *buf, size_t len, int timeout);
-#define full_read read
-#define full_write write
-#endif
 
-int index_in_strings(const char *strings, const char *key);
-
-#ifdef VI_ENABLE_WIN_RESIZE
+#ifdef RT_USING_POSIX_TERMIOS
+#include <termios.h>
+#define TERMIOS_CLEAR_ISIG      (1 << 0)
+#define TERMIOS_RAW_CRNL_INPUT  (1 << 1)
+#define TERMIOS_RAW_CRNL_OUTPUT (1 << 2)
+#define TERMIOS_RAW_CRNL        (TERMIOS_RAW_CRNL_INPUT|TERMIOS_RAW_CRNL_OUTPUT)
+#define TERMIOS_RAW_INPUT       (1 << 3)
+int tcsetattr_stdin_TCSANOW(const struct termios *tp);
 int get_terminal_width_height(int fd, unsigned *width, unsigned *height);
+int set_termios_to_raw(int fd, struct termios *oldterm, int flags);
 #endif
 
 //config: TODO for RT-Thread

@@ -1,3 +1,7 @@
+/*
+ * Licensed under GPLv2 or later, see file LICENSE in this source tree.
+ */
+
 #include "vi_utils.h"
 
 int index_in_strings(const char *strings, const char *key)
@@ -21,15 +25,14 @@ int index_in_strings(const char *strings, const char *key)
 }
 
 #ifdef VI_ENABLE_COLON
+/* Find out if the last character of a string matches the one given */
 char* last_char_is(const char *s, int c)
 {
-    if (s && *s) {
-        size_t sz = strlen(s) - 1;
-        s += sz;
-        if ( (unsigned char)*s == c)
-            return (char*)s;
-    }
-    return NULL;
+    if (!s[0])
+        return NULL;
+    while (s[1])
+        s++;
+    return (*s == (char)c) ? (char *) s : NULL;
 }
 #endif
 
@@ -78,92 +81,23 @@ char* skip_non_whitespace(const char *s)
 }
 #endif
 
-void bb_perror_msg(const char *s, ...)
-{
-    rt_kprintf("%s", s);
-}
-
-int safe_read(int fd, void *buf, size_t count)
-{
-    int n;
-
-    do {
-        n = read(fd, buf, count);
-    } while (n < 0 && errno == EINTR);
-
-    return n;
-}
-
-ssize_t safe_write(int fd, const void *buf, size_t count)
+ssize_t safe_read(int fd, void *buf, size_t count)
 {
     ssize_t n;
 
     for (;;) {
-        n = write(fd, buf, count);
+        n = read(fd, buf, count);
         if (n >= 0 || errno != EINTR)
             break;
         /* Some callers set errno=0, are upset when they see EINTR.
-         * Returning EINTR is wrong since we retry write(),
+         * Returning EINTR is wrong since we retry read(),
          * the "error" was transient.
          */
         errno = 0;
-        /* repeat the write() */
+        /* repeat the read() */
     }
 
     return n;
-}
-
-int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
-{
-    while (1) {
-        int n = poll(ufds, nfds, timeout);
-        if (n >= 0)
-            return n;
-        /* Make sure we inch towards completion */
-        if (timeout > 0)
-            timeout--;
-        /* E.g. strace causes poll to return this */
-        if (errno == EINTR)
-            continue;
-        /* Kernel is very low on memory. Retry. */
-        /* I doubt many callers would handle this correctly! */
-        if (errno == ENOMEM)
-            continue;
-        bb_perror_msg("poll");
-        return n;
-    }
-}
-
-/*
- * Write all of the supplied buffer out to a file.
- * This does multiple writes as necessary.
- * Returns the amount written, or -1 on an error.
- */
-ssize_t full_write(int fd, const void *buf, size_t len)
-{
-    ssize_t cc;
-    ssize_t total;
-
-    total = 0;
-
-    while (len) {
-        cc = safe_write(fd, buf, len);
-
-        if (cc < 0) {
-            if (total) {
-                /* we already wrote some! */
-                /* user can do another write to know the error code */
-                return total;
-            }
-            return cc;  /* write() returns -1 on failure. */
-        }
-
-        total += cc;
-        buf = ((const char *)buf) + cc;
-        len -= cc;
-    }
-
-    return total;
 }
 
 /*
@@ -198,6 +132,82 @@ ssize_t full_read(int fd, void *buf, size_t len)
     }
 
     return total;
+}
+
+ssize_t safe_write(int fd, const void *buf, size_t count)
+{
+    ssize_t n;
+
+    for (;;) {
+        n = write(fd, buf, count);
+        if (n >= 0 || errno != EINTR)
+            break;
+        /* Some callers set errno=0, are upset when they see EINTR.
+         * Returning EINTR is wrong since we retry write(),
+         * the "error" was transient.
+         */
+        errno = 0;
+        /* repeat the write() */
+    }
+
+    return n;
+}
+
+/*
+ * Write all of the supplied buffer out to a file.
+ * This does multiple writes as necessary.
+ * Returns the amount written, or -1 if error was seen
+ * on the very first write.
+ */
+ssize_t full_write(int fd, const void *buf, size_t len)
+{
+    ssize_t cc;
+    ssize_t total;
+
+    total = 0;
+
+    while (len) {
+        cc = safe_write(fd, buf, len);
+
+        if (cc < 0) {
+            if (total) {
+                /* we already wrote some! */
+                /* user can do another write to know the error code */
+                return total;
+            }
+            return cc;  /* write() returns -1 on failure. */
+        }
+
+        total += cc;
+        buf = ((const char *)buf) + cc;
+        len -= cc;
+    }
+
+    return total;
+}
+
+/* Wrapper which restarts poll on EINTR or ENOMEM.
+ * On other errors does perror("poll") and returns.
+ * Warning! May take longer than timeout_ms to return! */
+int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
+{
+    while (1) {
+        int n = poll(ufds, nfds, timeout);
+        if (n >= 0)
+            return n;
+        /* Make sure we inch towards completion */
+        if (timeout > 0)
+            timeout--;
+        /* E.g. strace causes poll to return this */
+        if (errno == EINTR)
+            continue;
+        /* Kernel is very low on memory. Retry. */
+        /* I doubt many callers would handle this correctly! */
+        if (errno == ENOMEM)
+            continue;
+        bb_simple_perror_msg("poll");
+        return n;
+    }
 }
 
 void* xzalloc(size_t size)
@@ -449,7 +459,8 @@ int64_t read_key(int fd, char *buffer, int timeout)
 
             buffer[-1] = 0;
             /* Pack into "1 <row15bits> <col16bits>" 32-bit sequence */
-            col |= ((((unsigned long)(-1) << 15) | row) << 16);
+            row |= ((unsigned)(-1) << 15);
+            col |= (row << 16);
             /* Return it in high-order word */
             return ((int64_t) col << 32) | (uint32_t)KEYCODE_CURSOR_POS;
         }
@@ -473,7 +484,7 @@ int64_t read_key(int fd, char *buffer, int timeout)
     goto start_over;
 }
 
-#if defined(VI_ENABLE_WIN_RESIZE) && defined(RT_USING_POSIX_TERMIOS)
+#ifdef RT_USING_POSIX_TERMIOS
 static int wh_helper(int value, int def_val, const char *env_name, int *err)
 {
     /* Envvars override even if "value" from ioctl is valid (>0).
@@ -536,7 +547,89 @@ int get_terminal_width_height(int fd, unsigned *width, unsigned *height)
 
     return err;
 }
+
+int tcsetattr_stdin_TCSANOW(const struct termios *tp)
+{
+    return tcsetattr(STDIN_FILENO, TCSANOW, tp);
+}
+
+static int get_termios_and_make_raw(int fd, struct termios *newterm, struct termios *oldterm, int flags)
+{
+//TODO: slattach, shell read might be adapted to use this too: grep for "tcsetattr", "[VTIME] = 0"
+    int r;
+
+    memset(oldterm, 0, sizeof(*oldterm)); /* paranoia */
+    r = tcgetattr(fd, oldterm);
+    *newterm = *oldterm;
+
+    /* Turn off buffered input (ICANON)
+     * Turn off echoing (ECHO)
+     * and separate echoing of newline (ECHONL, normally off anyway)
+     */
+    newterm->c_lflag &= ~(ICANON | ECHO | ECHONL);
+    if (flags & TERMIOS_CLEAR_ISIG) {
+        /* dont recognize INT/QUIT/SUSP chars */
+        newterm->c_lflag &= ~ISIG;
+    }
+    /* reads will block only if < 1 char is available */
+    newterm->c_cc[VMIN] = 1;
+    /* no timeout (reads block forever) */
+    newterm->c_cc[VTIME] = 0;
+/* IXON, IXOFF, and IXANY:
+ * IXOFF=1: sw flow control is enabled on input queue:
+ * tty transmits a STOP char when input queue is close to full
+ * and transmits a START char when input queue is nearly empty.
+ * IXON=1: sw flow control is enabled on output queue:
+ * tty will stop sending if STOP char is received,
+ * and resume sending if START is received, or if any char
+ * is received and IXANY=1.
+ */
+    if (flags & TERMIOS_RAW_CRNL_INPUT) {
+        /* IXON=0: XON/XOFF chars are treated as normal chars (why we do this?) */
+        /* dont convert CR to NL on input */
+        newterm->c_iflag &= ~(IXON | ICRNL);
+    }
+    if (flags & TERMIOS_RAW_CRNL_OUTPUT) {
+        /* dont convert NL to CR+NL on output */
+        newterm->c_oflag &= ~(ONLCR);
+        /* Maybe clear more c_oflag bits? Usually, only OPOST and ONLCR are set.
+         * OPOST  Enable output processing (reqd for OLCUC and *NL* bits to work)
+         * OLCUC  Map lowercase characters to uppercase on output.
+         * OCRNL  Map CR to NL on output.
+         * ONOCR  Don't output CR at column 0.
+         * ONLRET Don't output CR.
+         */
+    }
+    if (flags & TERMIOS_RAW_INPUT) {
+#ifndef IMAXBEL
+# define IMAXBEL 0
 #endif
+#ifndef IUCLC
+# define IUCLC 0
+#endif
+#ifndef IXANY
+# define IXANY 0
+#endif
+        /* IXOFF=0: disable sending XON/XOFF if input buf is full
+         * IXON=0: input XON/XOFF chars are not special
+         * BRKINT=0: dont send SIGINT on break
+         * IMAXBEL=0: dont echo BEL on input line too long
+         * INLCR,ICRNL,IUCLC: dont convert anything on input
+         */
+        newterm->c_iflag &= ~(IXOFF|IXON|IXANY|BRKINT|INLCR|ICRNL|IUCLC|IMAXBEL);
+    }
+    return r;
+}
+
+int set_termios_to_raw(int fd, struct termios *oldterm, int flags)
+{
+    struct termios newterm;
+
+    get_termios_and_make_raw(fd, &newterm, oldterm, flags);
+    return tcsetattr(fd, TCSANOW, &newterm);
+}
+
+#endif /* RT_USING_POSIX_TERMIOS */
 
 #if defined(VI_ENABLE_SEARCH) && !defined(__GNUC__)
 char* strchrnul(const char *s, int c)

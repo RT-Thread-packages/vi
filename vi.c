@@ -12,7 +12,6 @@
 //you may wish to use something else.
 
 #include <rtthread.h>
-#include <shell.h>
 #include <optparse.h>
 #include "vi_utils.h"
 
@@ -207,7 +206,7 @@ struct globals {
 #if ENABLE_FEATURE_VI_USE_SIGNALS
     sigjmp_buf restart;     // int_handler() jumps to location remembered here
 #endif
-#if 0 // RT-Thread team added
+#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
     struct termios term_orig; // remember what the cooked mode was
 #endif
     int cindex;               // saved character index for up/down motion
@@ -1950,7 +1949,7 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
             p--;
         }
     } else if (
-        #if 0 // RT-Thread team added
+        #ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
             c == term_orig.c_cc[VERASE] ||
         #endif
             c == 8 || c == 127) { // Is this a BS
@@ -2678,7 +2677,7 @@ static char *swap_context(char *p) // goto new context for '' command make this 
 //----- Set terminal attributes --------------------------------
 static void rawmode(void)
 {
-#if 0 // RT-Thread team added
+#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
     // no TERMIOS_CLEAR_ISIG: leave ISIG on - allow signals
     set_termios_to_raw(STDIN_FILENO, &term_orig, TERMIOS_RAW_CRNL);
 #endif
@@ -2687,7 +2686,7 @@ static void rawmode(void)
 static void cookmode(void)
 {
     fflush_all();
-#if 0
+#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
     tcsetattr_stdin_TCSANOW(&term_orig);
 #endif
 }
@@ -2736,7 +2735,8 @@ static void int_handler(int sig)
 }
 #endif /* FEATURE_VI_USE_SIGNALS */
 
-static int mysleep(int hund)    // sleep for 'hund' 1/100 seconds or stdin ready
+// sleep for 'h' 1/100 seconds, return 1/0 if stdin is (ready for read)/(not ready)
+static int mysleep(int hund)
 {
     struct pollfd pfd[1];
 
@@ -2845,7 +2845,7 @@ static char *get_input_line(const char *prompt)
         if (c == '\n' || c == '\r' || c == 27)
             break;      // this is end of input
         if (
-            #if 0 // RT-Thread team added
+            #ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
                 c == term_orig.c_cc[VERASE] ||
             #endif
                 c == 8 || c == 127) {
@@ -4452,4 +4452,5 @@ static void crash_test()
     }
 }
 #endif
+
 MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);

@@ -20,7 +20,7 @@
 #include <dfs_poll.h>
 #include <sys/types.h>
 
-#define BB_VER "latest: 2021-03-30"
+#define BB_VER "latest: 2021-04-07"
 #define BB_BT "busybox vi"
 
 //config:config FEATURE_VI_MAX_LEN

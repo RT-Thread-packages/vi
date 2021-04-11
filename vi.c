@@ -52,7 +52,6 @@ struct globals *ptr_to_globals;
 
 #endif
 
-
 enum {
     MAX_TABSTOP = 32, // sanity limit
     // User input len. Need not be extra big.
@@ -320,7 +319,9 @@ struct globals {
 #define context_start  (G.context_start )
 #define context_end    (G.context_end   )
 #define restart        (G.restart       )
+#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
 #define term_orig      (G.term_orig     )
+#endif
 #define cindex         (G.cindex        )
 #define keep_index     (G.keep_index    )
 #define initial_cmds   (G.initial_cmds  )
@@ -583,6 +584,7 @@ static int vi_main(int argc, char **argv)
     DELETE_G();
     return 0;
 }
+MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);
 
 /* read text from file or create an empty buf */
 /* will also update current_filename */
@@ -4452,5 +4454,3 @@ static void crash_test()
     }
 }
 #endif
-
-MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);

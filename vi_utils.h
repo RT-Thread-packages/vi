@@ -257,16 +257,9 @@
 
 /*----------------------------------------------------------------*/
 
-#define ENABLE_FEATURE_CLEAN_UP 1
-
 #define SET_PTR_TO_GLOBALS(x) do { \
     (*(struct globals**)&ptr_to_globals) = (void*)(x); \
     barrier(); \
-} while (0)
-#define FREE_PTR_TO_GLOBALS() do { \
-    if (ENABLE_FEATURE_CLEAN_UP) { \
-        xfree(ptr_to_globals); \
-    } \
 } while (0)
 
 /* "Keycodes" that report an escape sequence.
@@ -356,7 +349,6 @@ void xfree(void *ptr);
 void* xzalloc(size_t size);
 char *xstrdup(const char *s);
 char *xstrndup(const char *s, size_t n);
-void bb_show_usage(void);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
 

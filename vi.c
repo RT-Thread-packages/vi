@@ -547,8 +547,7 @@ static int vi_main(int argc, char **argv)
             show_help();
             // fall through
         default:
-            bb_show_usage();
-            FREE_PTR_TO_GLOBALS(); // RT-Thread team added
+            printf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
             return 1;
         }
     }
@@ -2038,7 +2037,7 @@ static int find_range(char **start, char **stop, char c)
         do_cmd(c);      // execute movement cmd
     } else if (c == ' ' || c == 'l') {
         // forward motion by character
-        int tmpcnt = (cmdcnt ?: 1);
+        int tmpcnt = (cmdcnt ? cmdcnt : 1);
         buftype = PARTIAL;
         do_cmd(c);      // execute movement cmd
         // exclude last char unless range isn't what we expected
@@ -2812,7 +2811,7 @@ static int get_motion_char(void)
         // get any non-zero motion count
         for (cnt = 0; isdigit(c); c = get_one_char())
             cnt = cnt * 10 + (c - '0');
-        cmdcnt = (cmdcnt ?: 1) * cnt;
+        cmdcnt = (cmdcnt ? cmdcnt : 1) * cnt;
     }
 
     return c;
@@ -3731,7 +3730,6 @@ static void do_cmd(int c)
             p = dot + 1;
         }
         goto dc4;       // now search for pattern
-        break;
     case 'n':           // n- repeat search for last pattern
         // search rest of text[] starting at next char
         // if search fails return orignal "p" not the "p+1" address
@@ -3851,7 +3849,6 @@ static void do_cmd(int c)
         if (*dot != '\n')
             dot++;
         goto dc_i;
-        break;
     case 'B':           // B- back a blank-delimited Word
     case 'E':           // E- end of a blank-delimited word
     case 'W':           // W- forward a blank-delimited word
@@ -3972,7 +3969,6 @@ static void do_cmd(int c)
             dot_prev(); // -
         }
         goto dc_i;
-        break;
     case 'R':           // R- continuous Replace char
  dc5:
         cmd_mode = 2;

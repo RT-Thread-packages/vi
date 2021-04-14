@@ -913,7 +913,7 @@ static void colon(char *buf)
 
     if (*p == ':')
         p++;
-    cnt = strlen(p);
+    cnt = rt_strlen(p);
     if (cnt == 0)
         return;
     if (strncmp(p, "quit", cnt) == 0
@@ -1040,7 +1040,7 @@ static void colon(char *buf)
         li = e - b + 1;
     }
     // ------------ now look for the command ------------
-    i = strlen(cmd);
+    i = rt_strlen(cmd);
     if (i == 0) {       // :123CR goto line #123
         if (b >= 0) {
             dot = find_line(b); // what line is #b
@@ -1252,7 +1252,7 @@ static void colon(char *buf)
         char *argp, *argn, oldch;
 #endif
         // only blank is regarded as args delimiter. What about tab '\t'?
-        if (!args[0] || strcmp(args, "all") == 0) {
+        if (!args[0] || rt_strcmp(args, "all") == 0) {
             // print out values of all options
 #if ENABLE_FEATURE_VI_SETOPTS
             status_line_bold(
@@ -1362,7 +1362,7 @@ static void colon(char *buf)
         if (args[0]) {
             struct stat statbuf;
 
-            if (!useforce && (fn == NULL || strcmp(fn, args) != 0) &&
+            if (!useforce && (fn == NULL || rt_strcmp(fn, args) != 0) &&
                     stat(args, &statbuf) == 0) {
                 status_line_bold("File exists (:w! overrides)");
                 goto ret;
@@ -1420,7 +1420,7 @@ static void colon(char *buf)
         text_yank(q, r, YDreg, WHOLE);
         li = count_lines(q, r);
         status_line("Yank %d lines (%d chars) into [%c]",
-                li, strlen(reg[YDreg]), what_reg());
+                li, rt_strlen(reg[YDreg]), what_reg());
 #endif
     } else {
         // cmd unknown
@@ -1824,7 +1824,7 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
         re_syntax_options = RE_SYNTAX_POSIX_EXTENDED | RE_ICASE;
 
     rt_memset(&preg, 0, sizeof(preg));
-    err = re_compile_pattern(pat, strlen(pat), &preg);
+    err = re_compile_pattern(pat, rt_strlen(pat), &preg);
     if (err != NULL) {
         status_line_bold("bad search pattern '%s': %s", pat, err);
         return p;
@@ -1889,7 +1889,7 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
     int len;
     int range;
 
-    len = strlen(pat);
+    len = rt_strlen(pat);
     range = (dir_and_range & 1);
     if (dir_and_range > 0) { //FORWARD?
         stop = end - 1; // assume range is p..end-1
@@ -2580,7 +2580,7 @@ static uintptr_t string_insert(char *p, const char *s, int undo) // insert the s
     uintptr_t bias;
     int i;
 
-    i = strlen(s);
+    i = rt_strlen(s);
 #if ENABLE_FEATURE_VI_UNDO
     undo_push_insert(p, i, undo);
 #endif
@@ -2831,7 +2831,7 @@ static char *get_input_line(const char *prompt)
     go_bottom_and_clear_to_eol();
     write1(prompt);      // write out the :, /, or ? prompt
 
-    i = strlen(buf);
+    i = rt_strlen(buf);
     while (i < MAX_INPUT_LEN) {
         c = get_one_char();
         if (c == '\n' || c == '\r' || c == 27)
@@ -3048,7 +3048,7 @@ static void show_status_line(void)
         go_bottom_and_clear_to_eol();
         write1(status_buffer);
         if (have_status_msg) {
-            if (((int)strlen(status_buffer) - (have_status_msg - 1)) >
+            if (((int)rt_strlen(status_buffer) - (have_status_msg - 1)) >
                     (columns - 1) ) {
                 have_status_msg = 0;
                 Hit_Return();
@@ -3714,7 +3714,7 @@ static void do_cmd(int c)
                 last_search_pattern[0] = c;
             goto dc3; // if no pat re-use old pat
         }
-        if (q[0]) {       // strlen(q) > 1: new pat- save it and find
+        if (q[0]) {       // rt_strlen(q) > 1: new pat- save it and find
             // there is a new pat
             xfree(last_search_pattern);
             last_search_pattern = xstrdup(q);
@@ -4112,13 +4112,13 @@ static void do_cmd(int c)
                 strcpy(buf, "Yank");
             }
             p = reg[YDreg];
-            q = p + strlen(p);
+            q = p + rt_strlen(p);
             for (cnt = 0; p <= q; p++) {
                 if (*p == '\n')
                     cnt++;
             }
             status_line("%s %u lines (%u chars) using [%c]",
-                buf, cnt, (unsigned)strlen(reg[YDreg]), what_reg());
+                buf, cnt, (unsigned)rt_strlen(reg[YDreg]), what_reg());
         }
 #endif
  dc6:
@@ -4347,7 +4347,7 @@ static void crash_dummy()
         goto cd0;
     }
     // randomly pick one of the available cmds from "cmd[]"
-    i = (int) lrand48() % strlen(cmd);
+    i = (int) lrand48() % rt_strlen(cmd);
     cm = cmd[i];
     if (strchr(":\024", cm))
         goto cd0;               // dont allow colon or ctrl-T commands
@@ -4361,14 +4361,14 @@ static void crash_dummy()
         if (cm == 'm' || cm == '\'' || cm == '\"') {    // pick a reg[]
             cmd1 = "abcdefghijklmnopqrstuvwxyz";
         }
-        thing = (int) lrand48() % strlen(cmd1); // pick a movement command
+        thing = (int) lrand48() % rt_strlen(cmd1); // pick a movement command
         c = cmd1[thing];
         readbuffer[rbi++] = c;  // add movement to input buffer
     }
     if (strchr("iIaAsc", cm)) {     // multi-char commands
         if (cm == 'c') {
             // change some thing
-            thing = (int) lrand48() % strlen(cmd1); // pick a movement command
+            thing = (int) lrand48() % rt_strlen(cmd1); // pick a movement command
             c = cmd1[thing];
             readbuffer[rbi++] = c;  // add movement to input buffer
         }
@@ -4376,7 +4376,7 @@ static void crash_dummy()
         cnt = (int) lrand48() % 10;     // how many to insert
         for (i = 0; i < cnt; i++) {
             if (thing == 0) {       // insert chars
-                readbuffer[rbi++] = chars[((int) lrand48() % strlen(chars))];
+                readbuffer[rbi++] = chars[((int) lrand48() % rt_strlen(chars))];
             } else if (thing == 1) {        // insert words
                 strcat(readbuffer, words[(int) lrand48() % 20]);
                 strcat(readbuffer, " ");
@@ -4391,7 +4391,7 @@ static void crash_dummy()
         }
         strcat(readbuffer, "\033");
     }
-    readbuffer[0] = strlen(readbuffer + 1);
+    readbuffer[0] = rt_strlen(readbuffer + 1);
  cd1:
     totalcmds++;
     if (sleeptime > 0)

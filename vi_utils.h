@@ -337,7 +337,7 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
-#define bb_putchar putchar
+#define bb_putchar(c) rt_kprintf("%c",c)
 #define bb_strtou strtoul
 #define fflush_all() /*fflush(NULL)*/
 

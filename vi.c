@@ -347,13 +347,6 @@ struct globals {
     IF_FEATURE_VI_SEARCH(last_search_pattern = xzalloc(2);) \
 } while (0)
 
-/* RT-Thread team added */
-#define DELETE_G() do { \
-    FREE_PTR_TO_GLOBALS(); \
-    /* "" but has space for 2 chars: */ \
-    IF_FEATURE_VI_SEARCH(free(last_search_pattern);) \
-} while (0)
-
 static void edit_file(char *);  // edit one file
 static void do_cmd(int);    // execute a command
 static int next_tabstop(int);
@@ -493,6 +486,12 @@ static int vi_main(int argc, char **argv)
     int c;
     char *file_name;
 
+    if(vi_mem_init() == 0) // RT-Thread team added
+    {
+        rt_kprintf("vi initialization failed.\r\n");
+        return -1;
+    }
+
     INIT_G();
 
 #if ENABLE_FEATURE_VI_UNDO
@@ -573,15 +572,7 @@ static int vi_main(int argc, char **argv)
     // "Use normal screen buffer, restore cursor"
     write1("\033[?1049l");
 
-    /* RT-Thread team added */
-    fflush_all();
-    free(text);
-    free(screen);
-    free(current_filename);
-#if ENABLE_FEATURE_VI_DOT_CMD
-    free(ioq_start);
-#endif
-    DELETE_G();
+    vi_mem_release(); // RT-Thread team added
     return 0;
 }
 MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);
@@ -597,16 +588,16 @@ static int init_text_buffer(char *fn)
     last_modified_count = -1;
 #if ENABLE_FEATURE_VI_YANKMARK
     /* init the marks */
-    memset(mark, 0, sizeof(mark));
+    rt_memset(mark, 0, sizeof(mark));
 #endif
 
     /* allocate/reallocate text buffer */
-    free(text);
+    xfree(text);
     text_size = 10240;
     screenbegin = dot = end = text = xzalloc(text_size);
 
     if (fn != current_filename) {
-        free(current_filename);
+        xfree(current_filename);
         current_filename = xstrdup(fn);
     }
     rc = file_insert(fn, text, 1);
@@ -697,7 +688,7 @@ static void edit_file(char *fn)
     offset = 0;         // no horizontal offset
     c = '\0';
 #if ENABLE_FEATURE_VI_DOT_CMD
-    free(ioq_start);
+    xfree(ioq_start);
     ioq_start = NULL;
     lmc_len = 0;
     adding2q = 0;
@@ -718,7 +709,7 @@ static void edit_file(char *fn)
                 if (*q)
                     colon(q);
             } while (p);
-            free(initial_cmds[n]);
+            xfree(initial_cmds[n]);
             initial_cmds[n] = NULL;
             n++;
         }
@@ -819,7 +810,7 @@ static char *get_one_address(char *p, int *addr)    // get colon addr, if presen
         q = strchrnul(p + 1, '/');
         if (p + 1 != q) {
             // save copy of new pattern
-            free(last_search_pattern);
+            xfree(last_search_pattern);
             last_search_pattern = xstrndup(p, q - p);
         }
         p = q;
@@ -1106,11 +1097,11 @@ static void colon(char *buf)
 
 #if ENABLE_FEATURE_VI_YANKMARK
         if (Ureg >= 0 && Ureg < 28) {
-            free(reg[Ureg]);    //   free orig line reg- for 'U'
+            xfree(reg[Ureg]);    //   xfree orig line reg- for 'U'
             reg[Ureg] = NULL;
         }
         /*if (YDreg < 28) - always true*/ {
-            free(reg[YDreg]);   //   free default yank/delete register
+            xfree(reg[YDreg]);   //   xfree default yank/delete register
             reg[YDreg] = NULL;
         }
 #endif
@@ -1133,7 +1124,7 @@ static void colon(char *buf)
         }
         if (args[0]) {
             // user wants a new filename
-            free(current_filename);
+            xfree(current_filename);
             current_filename = xstrdup(args);
         } else {
             // user wants file status info
@@ -1798,7 +1789,7 @@ static void new_screen(int ro, int co)
 {
     char *s;
 
-    free(screen);
+    xfree(screen);
     screensize = ro * co + 8;
     s = screen = xmalloc(screensize);
     // initialize the new screen. assume this will be a empty file.
@@ -1833,7 +1824,7 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
     if (ignorecase)
         re_syntax_options = RE_SYNTAX_POSIX_EXTENDED | RE_ICASE;
 
-    memset(&preg, 0, sizeof(preg));
+    rt_memset(&preg, 0, sizeof(preg));
     err = re_compile_pattern(pat, strlen(pat), &preg);
     if (err != NULL) {
         status_line_bold("bad search pattern '%s': %s", pat, err);
@@ -1990,7 +1981,7 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
 #if ENABLE_FEATURE_VI_UNDO
                 undo_push_insert(p, len, undo);
 #endif
-                memcpy(p, q, len);
+                rt_memcpy(p, q, len);
                 p += len;
             }
         }
@@ -2202,7 +2193,7 @@ static void flush_undo_data(void)
     while (undo_stack_tail) {
         undo_entry = undo_stack_tail;
         undo_stack_tail = undo_entry->prev;
-        free(undo_entry);
+        xfree(undo_entry);
     }
 }
 
@@ -2286,7 +2277,7 @@ static void undo_push(char *src, unsigned length, uint8_t u_type)
         // If this deletion empties text[], strip the newline. When the buffer becomes
         // zero-length, a newline is added back, which requires this to compensate.
         undo_entry = xzalloc(offsetof(struct undo_object, undo_text) + length);
-        memcpy(undo_entry->undo_text, src, length);
+        rt_memcpy(undo_entry->undo_text, src, length);
     } else {
         undo_entry = xzalloc(sizeof(*undo_entry));
     }
@@ -2349,7 +2340,7 @@ static void undo_pop(void)
         // make hole and put in text that was deleted; deallocate text
         u_start = text + undo_entry->start;
         text_hole_make(u_start, undo_entry->length);
-        memcpy(u_start, undo_entry->undo_text, undo_entry->length);
+        rt_memcpy(u_start, undo_entry->undo_text, undo_entry->length);
         status_line("Undo [%d] %s %d chars at position %d",
             modified_count, "restored",
             undo_entry->length, undo_entry->start
@@ -2382,7 +2373,7 @@ static void undo_pop(void)
     }
     // Deallocate the undo object we just processed
     undo_stack_tail = undo_entry->prev;
-    free(undo_entry);
+    xfree(undo_entry);
     modified_count--;
     // For chained operations, continue popping all the way down the chain.
     if (repeat) {
@@ -2439,7 +2430,7 @@ static uintptr_t text_hole_make(char *p, int size)  // at "p", make a 'size' byt
         text = new_text;
     }
     memmove(p + size, p, end - size - p);
-    memset(p, ' ', size);   // clear new hole
+    rt_memset(p, ' ', size);   // clear new hole
     return bias;
 }
 
@@ -2596,7 +2587,7 @@ static uintptr_t string_insert(char *p, const char *s, int undo) // insert the s
 #endif
     bias = text_hole_make(p, i);
     p += bias;
-    memcpy(p, s, i);
+    rt_memcpy(p, s, i);
 #if ENABLE_FEATURE_VI_YANKMARK
     {
         int cnt;
@@ -2621,7 +2612,7 @@ static char *text_yank(char *p, char *q, int dest, int buftype)
         p = q;
         cnt = -cnt;
     }
-    free(reg[dest]);    //  if already a yank register, free it
+    xfree(reg[dest]);    //  if already a yank register, xfree it
     reg[dest] = xstrndup(p, cnt + 1);
     return p;
 }
@@ -2789,7 +2780,7 @@ static int get_one_char(void)
             if (c != '\0')
                 return c;
             // the end of the q
-            free(ioq_start);
+            xfree(ioq_start);
             ioq_start = NULL;
             // read from STDIN:
         }
@@ -3029,7 +3020,7 @@ static void indicate_error(void)
 //----- Erase the Screen[] memory ------------------------------
 static void screen_erase(void)
 {
-    memset(screen, ' ', screensize);    // clear new screen
+    rt_memset(screen, ' ', screensize);    // clear new screen
 }
 
 static int bufsum(char *buf, int count)
@@ -3281,7 +3272,7 @@ static char* format_line(char *src /*, int li*/)
     dest += ofs;
     // fill the rest with spaces
     if (co < columns)
-        memset(&dest[co], ' ', columns - co);
+        rt_memset(&dest[co], ' ', columns - co);
     return dest;
 }
 
@@ -3367,7 +3358,7 @@ static void refresh(int full_screen)
         // is there a change between vitual screen and out_buf
         if (changed) {
             // copy changed part of buffer to virtual screen
-            memcpy(sp+cs, out_buf+cs, ce-cs+1);
+            rt_memcpy(sp+cs, out_buf+cs, ce-cs+1);
             place_cursor(li, cs);
             // write line out to terminal
             fwrite(&sp[cs], ce - cs + 1, 1, stdout);
@@ -3415,7 +3406,7 @@ static void do_cmd(int c)
 //  c1 = c; // quiet the compiler
 //  cnt = yf = 0; // quiet the compiler
 //  p = q = save_dot = buf; // quiet the compiler
-    memset(buf, '\0', sizeof(buf));
+    rt_memset(buf, '\0', sizeof(buf));
     keep_index = FALSE;
 
     show_status_line();
@@ -3726,7 +3717,7 @@ static void do_cmd(int c)
         }
         if (q[0]) {       // strlen(q) > 1: new pat- save it and find
             // there is a new pat
-            free(last_search_pattern);
+            xfree(last_search_pattern);
             last_search_pattern = xstrdup(q);
             goto dc3;   // now find the pattern
         }
@@ -4329,7 +4320,7 @@ static void crash_dummy()
     readbuffer[0] = 'X';
     startrbi = rbi = 1;
     sleeptime = 0;          // how long to pause between commands
-    memset(readbuffer, '\0', sizeof(readbuffer));
+    rt_memset(readbuffer, '\0', sizeof(readbuffer));
     // generate a command by percentages
     percent = (int) lrand48() % 100;        // get a number from 0-99
     if (percent < Mp) {     //  Movement commands

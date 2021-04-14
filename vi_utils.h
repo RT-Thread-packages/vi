@@ -20,6 +20,8 @@
 #include <dfs_poll.h>
 #include <sys/types.h>
 
+#include <mem_sandbox.h>
+
 #define BB_VER "latest: 2021-04-07"
 #define BB_BT "busybox vi"
 
@@ -253,6 +255,8 @@
 #define IF_FEATURE_VI_8BIT(...)
 #endif
 
+/*----------------------------------------------------------------*/
+
 #define ENABLE_FEATURE_CLEAN_UP 1
 
 #define SET_PTR_TO_GLOBALS(x) do { \
@@ -261,7 +265,7 @@
 } while (0)
 #define FREE_PTR_TO_GLOBALS() do { \
     if (ENABLE_FEATURE_CLEAN_UP) { \
-        free(ptr_to_globals); \
+        xfree(ptr_to_globals); \
     } \
 } while (0)
 
@@ -338,17 +342,22 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
-#define xmalloc malloc
-#define xrealloc realloc
-#define xstrdup strdup
-#define xstrndup strndup
+
+//#define xstrndup strndup
 #define bb_putchar putchar
 #define bb_strtou strtoul
 #define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
 #define bb_simple_perror_msg(...) printf(__VA_ARGS__)
 #define fflush_all() fflush(NULL)
 
+unsigned char vi_mem_init(void);
+void vi_mem_release(void);
+void *xmalloc(rt_size_t size);
+void *xrealloc(void *rmem, rt_size_t newsize);
+void xfree(void *ptr);
 void* xzalloc(size_t size);
+char *xstrdup(const char *s);
+char *xstrndup(const char *s, size_t n);
 void bb_show_usage(void);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);

@@ -210,11 +210,56 @@ int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
     }
 }
 
+static mem_sandbox_t vi_sandbox = RT_NULL;
+
+unsigned char vi_mem_init(void)
+{
+    vi_sandbox = mem_sandbox_create(1024 *20); /* sandbox size is 20KB */
+    if(vi_sandbox == RT_NULL)
+    {
+        return 0;
+    }
+    else
+    {
+        return 1;
+    }
+}
+
+void vi_mem_release(void)
+{
+    mem_sandbox_delete(vi_sandbox);
+}
+
+void *xmalloc(rt_size_t size)
+{
+    return mem_sandbox_malloc(vi_sandbox, size);
+}
+
+void *xrealloc(void *rmem, rt_size_t newsize)
+{
+    return mem_sandbox_realloc(vi_sandbox, rmem, newsize);
+}
+
+void xfree(void *ptr)
+{
+    mem_sandbox_free(vi_sandbox, ptr);
+}
+
 void* xzalloc(size_t size)
 {
-    void *ptr = malloc(size);
-    memset(ptr, 0, size);
+    void *ptr = xmalloc(size);
+    rt_memset(ptr, 0, size);
     return ptr;
+}
+
+char *xstrdup(const char *s)
+{
+    return mem_sandbox_strdup(vi_sandbox, s);
+}
+
+char *xstrndup(const char *s, size_t n)
+{
+    return mem_sandbox_strndup(vi_sandbox, s, n);
 }
 
 void bb_show_usage(void)

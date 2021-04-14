@@ -478,7 +478,7 @@ static struct optparse options;
 
 static void write1(const char *out)
 {
-    rt_kprintf(out);
+    fputs(out, stdout);
 }
 
 static int vi_main(int argc, char **argv)
@@ -547,7 +547,8 @@ static int vi_main(int argc, char **argv)
             show_help();
             // fall through
         default:
-            rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage()*/
+            bb_show_usage();
+            FREE_PTR_TO_GLOBALS(); // RT-Thread team added
             return 1;
         }
     }
@@ -913,7 +914,7 @@ static void colon(char *buf)
 
     if (*p == ':')
         p++;
-    cnt = rt_strlen(p);
+    cnt = strlen(p);
     if (cnt == 0)
         return;
     if (strncmp(p, "quit", cnt) == 0
@@ -1040,7 +1041,7 @@ static void colon(char *buf)
         li = e - b + 1;
     }
     // ------------ now look for the command ------------
-    i = rt_strlen(cmd);
+    i = strlen(cmd);
     if (i == 0) {       // :123CR goto line #123
         if (b >= 0) {
             dot = find_line(b); // what line is #b
@@ -1055,7 +1056,7 @@ static void colon(char *buf)
         cookmode();
         retcode = system(orig_buf + 1); // run the cmd
         if (retcode)
-            rt_kprintf("\nshell returned %i\n\n", retcode);
+            printf("\nshell returned %i\n\n", retcode);
         rawmode();
         Hit_Return();           // let user see results
     }
@@ -1252,7 +1253,7 @@ static void colon(char *buf)
         char *argp, *argn, oldch;
 #endif
         // only blank is regarded as args delimiter. What about tab '\t'?
-        if (!args[0] || rt_strcmp(args, "all") == 0) {
+        if (!args[0] || strcmp(args, "all") == 0) {
             // print out values of all options
 #if ENABLE_FEATURE_VI_SETOPTS
             status_line_bold(
@@ -1362,7 +1363,7 @@ static void colon(char *buf)
         if (args[0]) {
             struct stat statbuf;
 
-            if (!useforce && (fn == NULL || rt_strcmp(fn, args) != 0) &&
+            if (!useforce && (fn == NULL || strcmp(fn, args) != 0) &&
                     stat(args, &statbuf) == 0) {
                 status_line_bold("File exists (:w! overrides)");
                 goto ret;
@@ -1380,14 +1381,14 @@ static void colon(char *buf)
         size = r - q + 1;
         //if (useforce) {
             // if "fn" is not write-able, chmod u+w
-            // rt_sprintf(syscmd, "chmod u+w %s", fn);
+            // sprintf(syscmd, "chmod u+w %s", fn);
             // system(syscmd);
             // forced = TRUE;
         //}
         l = file_write(fn, q, r);
         //if (useforce && forced) {
             // chmod u-w
-            // rt_sprintf(syscmd, "chmod u-w %s", fn);
+            // sprintf(syscmd, "chmod u-w %s", fn);
             // system(syscmd);
             // forced = FALSE;
         //}
@@ -1420,7 +1421,7 @@ static void colon(char *buf)
         text_yank(q, r, YDreg, WHOLE);
         li = count_lines(q, r);
         status_line("Yank %d lines (%d chars) into [%c]",
-                li, rt_strlen(reg[YDreg]), what_reg());
+                li, strlen(reg[YDreg]), what_reg());
 #endif
     } else {
         // cmd unknown
@@ -1824,7 +1825,7 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
         re_syntax_options = RE_SYNTAX_POSIX_EXTENDED | RE_ICASE;
 
     rt_memset(&preg, 0, sizeof(preg));
-    err = re_compile_pattern(pat, rt_strlen(pat), &preg);
+    err = re_compile_pattern(pat, strlen(pat), &preg);
     if (err != NULL) {
         status_line_bold("bad search pattern '%s': %s", pat, err);
         return p;
@@ -1889,7 +1890,7 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
     int len;
     int range;
 
-    len = rt_strlen(pat);
+    len = strlen(pat);
     range = (dir_and_range & 1);
     if (dir_and_range > 0) { //FORWARD?
         stop = end - 1; // assume range is p..end-1
@@ -2553,7 +2554,7 @@ static void start_new_cmd_q(char c)
     // get buffer for new cmd
     // if there is a current cmd count put it in the buffer first
     if (cmdcnt > 0) {
-        lmc_len = rt_sprintf(last_modifying_cmd, "%u%c", cmdcnt, c);
+        lmc_len = sprintf(last_modifying_cmd, "%u%c", cmdcnt, c);
     } else { // just save char c onto queue
         last_modifying_cmd[0] = c;
         lmc_len = 1;
@@ -2580,7 +2581,7 @@ static uintptr_t string_insert(char *p, const char *s, int undo) // insert the s
     uintptr_t bias;
     int i;
 
-    i = rt_strlen(s);
+    i = strlen(s);
 #if ENABLE_FEATURE_VI_UNDO
     undo_push_insert(p, i, undo);
 #endif
@@ -2757,7 +2758,7 @@ static int readit(void) // read (maybe cursor) key from stdin
             goto again;
         go_bottom_and_clear_to_eol();
         cookmode(); // terminal to "cooked"
-        rt_kprintf("can't read user input");
+        bb_simple_error_msg_and_die("can't read user input");
     }
     return c;
 }
@@ -2831,7 +2832,7 @@ static char *get_input_line(const char *prompt)
     go_bottom_and_clear_to_eol();
     write1(prompt);      // write out the :, /, or ? prompt
 
-    i = rt_strlen(buf);
+    i = strlen(buf);
     while (i < MAX_INPUT_LEN) {
         c = get_one_char();
         if (c == '\n' || c == '\r' || c == 27)
@@ -2964,7 +2965,7 @@ static void place_cursor(int row, int col)
     if (col < 0) col = 0;
     if (col >= columns) col = columns - 1;
 
-    rt_sprintf(cm1, ESC_SET_CURSOR_POS, row + 1, col + 1);
+    sprintf(cm1, ESC_SET_CURSOR_POS, row + 1, col + 1);
     write1(cm1);
 }
 
@@ -3048,7 +3049,7 @@ static void show_status_line(void)
         go_bottom_and_clear_to_eol();
         write1(status_buffer);
         if (have_status_msg) {
-            if (((int)rt_strlen(status_buffer) - (have_status_msg - 1)) >
+            if (((int)strlen(status_buffer) - (have_status_msg - 1)) >
                     (columns - 1) ) {
                 have_status_msg = 0;
                 Hit_Return();
@@ -3068,7 +3069,7 @@ static void status_line_bold(const char *format, ...)
 
     va_start(args, format);
     strcpy(status_buffer, ESC_BOLD_TEXT);
-    rt_vsnprintf(status_buffer + (sizeof(ESC_BOLD_TEXT)-1),
+    vsnprintf(status_buffer + (sizeof(ESC_BOLD_TEXT)-1),
         STATUS_BUFFER_LEN - sizeof(ESC_BOLD_TEXT) - sizeof(ESC_NORM_TEXT),
         format, args
     );
@@ -3089,7 +3090,7 @@ static void status_line(const char *format, ...)
     va_list args;
 
     va_start(args, format);
-    rt_vsnprintf(status_buffer, STATUS_BUFFER_LEN, format, args);
+    vsnprintf(status_buffer, STATUS_BUFFER_LEN, format, args);
     va_end(args);
 
     have_status_msg = 1;
@@ -3185,7 +3186,7 @@ static int format_edit_status(void)
     trunc_at = columns < STATUS_BUFFER_LEN-1 ?
         columns : STATUS_BUFFER_LEN-1;
 
-    ret = rt_snprintf(status_buffer, trunc_at+1,
+    ret = snprintf(status_buffer, trunc_at+1,
 #if ENABLE_FEATURE_VI_READONLY
         "%c %s%s%s %d/%d %d%%",
 #else
@@ -3714,7 +3715,7 @@ static void do_cmd(int c)
                 last_search_pattern[0] = c;
             goto dc3; // if no pat re-use old pat
         }
-        if (q[0]) {       // rt_strlen(q) > 1: new pat- save it and find
+        if (q[0]) {       // strlen(q) > 1: new pat- save it and find
             // there is a new pat
             xfree(last_search_pattern);
             last_search_pattern = xstrdup(q);
@@ -4112,13 +4113,13 @@ static void do_cmd(int c)
                 strcpy(buf, "Yank");
             }
             p = reg[YDreg];
-            q = p + rt_strlen(p);
+            q = p + strlen(p);
             for (cnt = 0; p <= q; p++) {
                 if (*p == '\n')
                     cnt++;
             }
             status_line("%s %u lines (%u chars) using [%c]",
-                buf, cnt, (unsigned)rt_strlen(reg[YDreg]), what_reg());
+                buf, cnt, (unsigned)strlen(reg[YDreg]), what_reg());
         }
 #endif
  dc6:
@@ -4347,7 +4348,7 @@ static void crash_dummy()
         goto cd0;
     }
     // randomly pick one of the available cmds from "cmd[]"
-    i = (int) lrand48() % rt_strlen(cmd);
+    i = (int) lrand48() % strlen(cmd);
     cm = cmd[i];
     if (strchr(":\024", cm))
         goto cd0;               // dont allow colon or ctrl-T commands
@@ -4361,14 +4362,14 @@ static void crash_dummy()
         if (cm == 'm' || cm == '\'' || cm == '\"') {    // pick a reg[]
             cmd1 = "abcdefghijklmnopqrstuvwxyz";
         }
-        thing = (int) lrand48() % rt_strlen(cmd1); // pick a movement command
+        thing = (int) lrand48() % strlen(cmd1); // pick a movement command
         c = cmd1[thing];
         readbuffer[rbi++] = c;  // add movement to input buffer
     }
     if (strchr("iIaAsc", cm)) {     // multi-char commands
         if (cm == 'c') {
             // change some thing
-            thing = (int) lrand48() % rt_strlen(cmd1); // pick a movement command
+            thing = (int) lrand48() % strlen(cmd1); // pick a movement command
             c = cmd1[thing];
             readbuffer[rbi++] = c;  // add movement to input buffer
         }
@@ -4376,7 +4377,7 @@ static void crash_dummy()
         cnt = (int) lrand48() % 10;     // how many to insert
         for (i = 0; i < cnt; i++) {
             if (thing == 0) {       // insert chars
-                readbuffer[rbi++] = chars[((int) lrand48() % rt_strlen(chars))];
+                readbuffer[rbi++] = chars[((int) lrand48() % strlen(chars))];
             } else if (thing == 1) {        // insert words
                 strcat(readbuffer, words[(int) lrand48() % 20]);
                 strcat(readbuffer, " ");
@@ -4391,7 +4392,7 @@ static void crash_dummy()
         }
         strcat(readbuffer, "\033");
     }
-    readbuffer[0] = rt_strlen(readbuffer + 1);
+    readbuffer[0] = strlen(readbuffer + 1);
  cd1:
     totalcmds++;
     if (sleeptime > 0)
@@ -4427,7 +4428,7 @@ static void crash_test()
     }
 
     if (msg[0]) {
-        rt_kprintf("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
+        printf("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
             totalcmds, last_input_char, msg, ESC_BOLD_TEXT, ESC_NORM_TEXT);
         fflush_all();
         while (safe_read(STDIN_FILENO, d, 1) > 0) {
@@ -4437,7 +4438,7 @@ static void crash_test()
     }
     tim = time(NULL);
     if (tim >= (oldtim + 3)) {
-        rt_sprintf(status_buffer,
+        sprintf(status_buffer,
                 "Tot=%d: M=%d N=%d I=%d D=%d Y=%d P=%d U=%d size=%d",
                 totalcmds, M, N, I, D, Y, P, U, end - text + 1);
         oldtim = tim;

@@ -205,7 +205,7 @@ int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
         /* I doubt many callers would handle this correctly! */
         if (errno == ENOMEM)
             continue;
-        rt_kprintf("poll");
+        bb_simple_perror_msg("poll");
         return n;
     }
 }
@@ -260,6 +260,11 @@ char *xstrdup(const char *s)
 char *xstrndup(const char *s, size_t n)
 {
     return mem_sandbox_strndup(vi_sandbox, s, n);
+}
+
+void bb_show_usage(void)
+{
+    printf("Usage: vi [FILE]\n");
 }
 
 int64_t read_key(int fd, char *buffer, int timeout)

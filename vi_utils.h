@@ -263,6 +263,11 @@
     (*(struct globals**)&ptr_to_globals) = (void*)(x); \
     barrier(); \
 } while (0)
+#define FREE_PTR_TO_GLOBALS() do { \
+    if (ENABLE_FEATURE_CLEAN_UP) { \
+        xfree(ptr_to_globals); \
+    } \
+} while (0)
 
 /* "Keycodes" that report an escape sequence.
  * We use something which fits into signed char,
@@ -337,9 +342,11 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
-#define bb_putchar(c) rt_kprintf("%c",c)
+#define bb_putchar putchar
 #define bb_strtou strtoul
-#define fflush_all() /*fflush(NULL)*/
+#define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
+#define bb_simple_perror_msg(...) printf(__VA_ARGS__)
+#define fflush_all() fflush(NULL)
 
 unsigned char vi_mem_init(void);
 void vi_mem_release(void);
@@ -349,6 +356,7 @@ void xfree(void *ptr);
 void* xzalloc(size_t size);
 char *xstrdup(const char *s);
 char *xstrndup(const char *s, size_t n);
+void bb_show_usage(void);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
 

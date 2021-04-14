@@ -1097,11 +1097,11 @@ static void colon(char *buf)
 
 #if ENABLE_FEATURE_VI_YANKMARK
         if (Ureg >= 0 && Ureg < 28) {
-            xfree(reg[Ureg]);    //   xfree orig line reg- for 'U'
+            xfree(reg[Ureg]);    //   free orig line reg- for 'U'
             reg[Ureg] = NULL;
         }
         /*if (YDreg < 28) - always true*/ {
-            xfree(reg[YDreg]);   //   xfree default yank/delete register
+            xfree(reg[YDreg]);   //   free default yank/delete register
             reg[YDreg] = NULL;
         }
 #endif
@@ -2612,7 +2612,7 @@ static char *text_yank(char *p, char *q, int dest, int buftype)
         p = q;
         cnt = -cnt;
     }
-    xfree(reg[dest]);    //  if already a yank register, xfree it
+    xfree(reg[dest]);    //  if already a yank register, free it
     reg[dest] = xstrndup(p, cnt + 1);
     return p;
 }

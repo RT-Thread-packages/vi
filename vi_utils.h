@@ -342,8 +342,6 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
-
-//#define xstrndup strndup
 #define bb_putchar putchar
 #define bb_strtou strtoul
 #define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)

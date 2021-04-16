@@ -335,20 +335,18 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
-#define bb_putchar putchar
-#define bb_strtou strtoul
-#define bb_simple_error_msg_and_die(...) printf(__VA_ARGS__)
-#define bb_simple_perror_msg(...) printf(__VA_ARGS__)
+#define vi_putchar putchar
+#define vi_strtou strtoul
 #define fflush_all() fflush(NULL)
 
 unsigned char vi_mem_init(void);
 void vi_mem_release(void);
-void *xmalloc(rt_size_t size);
-void *xrealloc(void *rmem, rt_size_t newsize);
-void xfree(void *ptr);
-void* xzalloc(size_t size);
-char *xstrdup(const char *s);
-char *xstrndup(const char *s, size_t n);
+void *vi_malloc(rt_size_t size);
+void *vi_realloc(void *rmem, rt_size_t newsize);
+void vi_free(void *ptr);
+void* vi_zalloc(size_t size);
+char *vi_strdup(const char *s);
+char *vi_strndup(const char *s, size_t n);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
 

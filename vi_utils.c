@@ -4,6 +4,17 @@
 
 #include "vi_utils.h"
 
+#define DBG_TAG "vi"
+#define DBG_LVL DBG_INFO
+#include <rtdbg.h>
+
+#include <rtconfig.h>
+#ifndef VI_SANDBOX_SIZE_KB
+#define VI_SANDBOX_SIZE_KB   20 /* KB */
+#endif
+
+static const char *vi_outof_momory_warning = "vi sandbox runs out of memory, please enlarge VI_SANDBOX_SIZE_KB";
+
 int index_in_strings(const char *strings, const char *key)
 {
     int j, idx = 0;
@@ -205,7 +216,7 @@ int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
         /* I doubt many callers would handle this correctly! */
         if (errno == ENOMEM)
             continue;
-        bb_simple_perror_msg("poll");
+        printf("poll");
         return n;
     }
 }
@@ -214,9 +225,10 @@ static mem_sandbox_t vi_sandbox = RT_NULL;
 
 unsigned char vi_mem_init(void)
 {
-    vi_sandbox = mem_sandbox_create(1024 *20); /* sandbox size is 20KB */
+    vi_sandbox = mem_sandbox_create(VI_SANDBOX_SIZE_KB * 1024);
     if(vi_sandbox == RT_NULL)
     {
+        LOG_E("vi sandbox create error");
         return 0;
     }
     else
@@ -230,36 +242,68 @@ void vi_mem_release(void)
     mem_sandbox_delete(vi_sandbox);
 }
 
-void *xmalloc(rt_size_t size)
+void *vi_malloc(rt_size_t size)
 {
-    return mem_sandbox_malloc(vi_sandbox, size);
+    void * p;
+    p = mem_sandbox_malloc(vi_sandbox, size);
+    if(p == RT_NULL)
+    {
+        LOG_E(vi_outof_momory_warning);
+        RT_ASSERT(p != RT_NULL);
+        return RT_NULL;
+    }
+    return p;
 }
 
-void *xrealloc(void *rmem, rt_size_t newsize)
+void *vi_realloc(void *rmem, rt_size_t newsize)
 {
-    return mem_sandbox_realloc(vi_sandbox, rmem, newsize);
+    void *p;
+    p = mem_sandbox_realloc(vi_sandbox, rmem, newsize);
+    if(p == RT_NULL && newsize != 0)
+    {
+        LOG_E(vi_outof_momory_warning);
+        RT_ASSERT(p != RT_NULL);
+        return RT_NULL;
+    }
+    return p;
 }
 
-void xfree(void *ptr)
+void vi_free(void *ptr)
 {
     mem_sandbox_free(vi_sandbox, ptr);
 }
 
-void* xzalloc(size_t size)
+void* vi_zalloc(size_t size)
 {
-    void *ptr = xmalloc(size);
+    void *ptr = vi_malloc(size);
     rt_memset(ptr, 0, size);
     return ptr;
 }
 
-char *xstrdup(const char *s)
+char *vi_strdup(const char *s)
 {
-    return mem_sandbox_strdup(vi_sandbox, s);
+    void *p;
+    p = mem_sandbox_strdup(vi_sandbox, s);
+    if(p == RT_NULL)
+    {
+        LOG_E(vi_outof_momory_warning);
+        RT_ASSERT(p != RT_NULL);
+        return RT_NULL;
+    }
+    return p;
 }
 
-char *xstrndup(const char *s, size_t n)
+char *vi_strndup(const char *s, size_t n)
 {
-    return mem_sandbox_strndup(vi_sandbox, s, n);
+    void *p;
+    p = mem_sandbox_strndup(vi_sandbox, s, n);
+    if(p == RT_NULL)
+    {
+        LOG_E(vi_outof_momory_warning);
+        RT_ASSERT(p != RT_NULL);
+        return RT_NULL;
+    }
+    return p;
 }
 
 int64_t read_key(int fd, char *buffer, int timeout)

@@ -341,10 +341,10 @@ struct globals {
 #endif
 
 #define INIT_G() do { \
-    SET_PTR_TO_GLOBALS(xzalloc(sizeof(G))); \
+    SET_PTR_TO_GLOBALS(vi_zalloc(sizeof(G))); \
     last_modified_count = -1; \
     /* "" but has space for 2 chars: */ \
-    IF_FEATURE_VI_SEARCH(last_search_pattern = xzalloc(2);) \
+    IF_FEATURE_VI_SEARCH(last_search_pattern = vi_zalloc(2);) \
 } while (0)
 
 static void edit_file(char *);  // edit one file
@@ -521,7 +521,7 @@ static int vi_main(int argc, char **argv)
     {
         char *p = getenv("EXINIT");
         if (p && *p)
-            initial_cmds[0] = xstrndup(p, MAX_INPUT_LEN);
+            initial_cmds[0] = vi_strndup(p, MAX_INPUT_LEN);
     }
 #endif
     optparse_init(&options, argv); // RT-Thread team added
@@ -540,7 +540,7 @@ static int vi_main(int argc, char **argv)
 #if ENABLE_FEATURE_VI_COLON
         case 'c':       // cmd line vi command
             if (*options.optarg)
-                initial_cmds[initial_cmds[0] != NULL] = xstrndup(options.optarg, MAX_INPUT_LEN);
+                initial_cmds[initial_cmds[0] != NULL] = vi_strndup(options.optarg, MAX_INPUT_LEN);
             break;
 #endif
         case 'H':
@@ -571,7 +571,20 @@ static int vi_main(int argc, char **argv)
     // "Use normal screen buffer, restore cursor"
     write1("\033[?1049l");
 
-    vi_mem_release(); // RT-Thread team added
+    /* RT-Thread team added */
+    vi_free(text);
+    vi_free(screen);
+    vi_free(current_filename);
+#if ENABLE_FEATURE_VI_DOT_CMD
+    vi_free(ioq_start);
+#endif
+#if ENABLE_FEATURE_VI_SEARCH
+    vi_free(last_search_pattern);
+#endif
+    vi_free(ptr_to_globals);
+    fflush_all();
+
+    vi_mem_release();
     return 0;
 }
 MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);
@@ -591,13 +604,13 @@ static int init_text_buffer(char *fn)
 #endif
 
     /* allocate/reallocate text buffer */
-    xfree(text);
+    vi_free(text);
     text_size = 10240;
-    screenbegin = dot = end = text = xzalloc(text_size);
+    screenbegin = dot = end = text = vi_zalloc(text_size);
 
     if (fn != current_filename) {
-        xfree(current_filename);
-        current_filename = xstrdup(fn);
+        vi_free(current_filename);
+        current_filename = vi_strdup(fn);
     }
     rc = file_insert(fn, text, 1);
     if (rc < 0) {
@@ -687,7 +700,7 @@ static void edit_file(char *fn)
     offset = 0;         // no horizontal offset
     c = '\0';
 #if ENABLE_FEATURE_VI_DOT_CMD
-    xfree(ioq_start);
+    vi_free(ioq_start);
     ioq_start = NULL;
     lmc_len = 0;
     adding2q = 0;
@@ -708,7 +721,7 @@ static void edit_file(char *fn)
                 if (*q)
                     colon(q);
             } while (p);
-            xfree(initial_cmds[n]);
+            vi_free(initial_cmds[n]);
             initial_cmds[n] = NULL;
             n++;
         }
@@ -809,8 +822,8 @@ static char *get_one_address(char *p, int *addr)    // get colon addr, if presen
         q = strchrnul(p + 1, '/');
         if (p + 1 != q) {
             // save copy of new pattern
-            xfree(last_search_pattern);
-            last_search_pattern = xstrndup(p, q - p);
+            vi_free(last_search_pattern);
+            last_search_pattern = vi_strndup(p, q - p);
         }
         p = q;
         if (*p == '/')
@@ -886,7 +899,7 @@ static void setops(char *args, int flg_no)
         int t;
         if (!eq || flg_no) // no "=NNN" or it is "notabstop"?
             goto bad;
-        t = bb_strtou(eq + 1, NULL, 10);
+        t = vi_strtou(eq + 1, NULL, 10);
         if (t <= 0 || t > MAX_TABSTOP)
             goto bad;
         tabstop = t;
@@ -1096,11 +1109,11 @@ static void colon(char *buf)
 
 #if ENABLE_FEATURE_VI_YANKMARK
         if (Ureg >= 0 && Ureg < 28) {
-            xfree(reg[Ureg]);    //   free orig line reg- for 'U'
+            vi_free(reg[Ureg]);    //   free orig line reg- for 'U'
             reg[Ureg] = NULL;
         }
         /*if (YDreg < 28) - always true*/ {
-            xfree(reg[YDreg]);   //   free default yank/delete register
+            vi_free(reg[YDreg]);   //   free default yank/delete register
             reg[YDreg] = NULL;
         }
 #endif
@@ -1123,8 +1136,8 @@ static void colon(char *buf)
         }
         if (args[0]) {
             // user wants a new filename
-            xfree(current_filename);
-            current_filename = xstrdup(args);
+            vi_free(current_filename);
+            current_filename = vi_strdup(args);
         } else {
             // user wants file status info
             last_status_cksum = 0;  // force status update
@@ -1155,13 +1168,13 @@ static void colon(char *buf)
             if (c == '\n') {
                 write1("$\r");
             } else if (c < ' ' || c == 127) {
-                bb_putchar('^');
+                vi_putchar('^');
                 if (c == 127)
                     c = '?';
                 else
                     c += '@';
             }
-            bb_putchar(c);
+            vi_putchar(c);
             if (c_is_no_print)
                 standout_end();
         }
@@ -1788,9 +1801,9 @@ static void new_screen(int ro, int co)
 {
     char *s;
 
-    xfree(screen);
+    vi_free(screen);
     screensize = ro * co + 8;
-    s = screen = xmalloc(screensize);
+    s = screen = vi_malloc(screensize);
     // initialize the new screen. assume this will be a empty file.
     screen_erase();
     // non-existent text[] lines start with a tilde (~).
@@ -2192,7 +2205,7 @@ static void flush_undo_data(void)
     while (undo_stack_tail) {
         undo_entry = undo_stack_tail;
         undo_stack_tail = undo_entry->prev;
-        xfree(undo_entry);
+        vi_free(undo_entry);
     }
 }
 
@@ -2275,10 +2288,10 @@ static void undo_push(char *src, unsigned length, uint8_t u_type)
             length--;
         // If this deletion empties text[], strip the newline. When the buffer becomes
         // zero-length, a newline is added back, which requires this to compensate.
-        undo_entry = xzalloc(offsetof(struct undo_object, undo_text) + length);
+        undo_entry = vi_zalloc(offsetof(struct undo_object, undo_text) + length);
         rt_memcpy(undo_entry->undo_text, src, length);
     } else {
-        undo_entry = xzalloc(sizeof(*undo_entry));
+        undo_entry = vi_zalloc(sizeof(*undo_entry));
     }
     undo_entry->length = length;
 #if ENABLE_FEATURE_VI_UNDO_QUEUE
@@ -2372,7 +2385,7 @@ static void undo_pop(void)
     }
     // Deallocate the undo object we just processed
     undo_stack_tail = undo_entry->prev;
-    xfree(undo_entry);
+    vi_free(undo_entry);
     modified_count--;
     // For chained operations, continue popping all the way down the chain.
     if (repeat) {
@@ -2412,7 +2425,7 @@ static uintptr_t text_hole_make(char *p, int size)  // at "p", make a 'size' byt
     if (end >= (text + text_size)) {
         char *new_text;
         text_size += end - (text + text_size) + 10240;
-        new_text = xrealloc(text, text_size);
+        new_text = vi_realloc(text, text_size);
         bias = (new_text - text);
         screenbegin += bias;
         dot         += bias;
@@ -2611,8 +2624,8 @@ static char *text_yank(char *p, char *q, int dest, int buftype)
         p = q;
         cnt = -cnt;
     }
-    xfree(reg[dest]);    //  if already a yank register, free it
-    reg[dest] = xstrndup(p, cnt + 1);
+    vi_free(reg[dest]);    //  if already a yank register, free it
+    reg[dest] = vi_strndup(p, cnt + 1);
     return p;
 }
 
@@ -2757,7 +2770,7 @@ static int readit(void) // read (maybe cursor) key from stdin
             goto again;
         go_bottom_and_clear_to_eol();
         cookmode(); // terminal to "cooked"
-        bb_simple_error_msg_and_die("can't read user input");
+        printf("can't read user input");
     }
     return c;
 }
@@ -2779,7 +2792,7 @@ static int get_one_char(void)
             if (c != '\0')
                 return c;
             // the end of the q
-            xfree(ioq_start);
+            vi_free(ioq_start);
             ioq_start = NULL;
             // read from STDIN:
         }
@@ -2850,7 +2863,7 @@ static char *get_input_line(const char *prompt)
             // (TODO: need to handle Unicode)
             buf[i] = c;
             buf[++i] = '\0';
-            bb_putchar(c);
+            vi_putchar(c);
         }
     }
     refresh(FALSE);
@@ -3699,7 +3712,7 @@ static void do_cmd(int c)
         // Stuff the last_modifying_cmd back into stdin
         // and let it be re-executed.
         if (lmc_len != 0) {
-            ioq = ioq_start = xstrndup(last_modifying_cmd, lmc_len);
+            ioq = ioq_start = vi_strndup(last_modifying_cmd, lmc_len);
         }
         break;
 #endif
@@ -3716,8 +3729,8 @@ static void do_cmd(int c)
         }
         if (q[0]) {       // strlen(q) > 1: new pat- save it and find
             // there is a new pat
-            xfree(last_search_pattern);
-            last_search_pattern = xstrdup(q);
+            vi_free(last_search_pattern);
+            last_search_pattern = vi_strdup(q);
             goto dc3;   // now find the pattern
         }
         // user changed mind and erased the "/"-  do nothing

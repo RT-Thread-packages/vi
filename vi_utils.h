@@ -320,7 +320,7 @@ typedef enum {FALSE = 0, TRUE = !FALSE} bool;
 typedef int smallint;
 typedef unsigned smalluint;
 
-#if defined(_MSC_VER) || defined(__CC_ARM)
+#if defined(_MSC_VER) || defined(__CC_ARM) || defined(__ICCARM__)
 #define ALIGN1
 #define barrier()
 #define F_OK    0

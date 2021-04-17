@@ -47,7 +47,7 @@ char* last_char_is(const char *s, int c)
 }
 #endif
 
-#if defined(_MSC_VER) || defined(__CC_ARM)
+#if defined(_MSC_VER) || defined(__CC_ARM) || defined(__ICCARM__)
 void *memrchr(const void* ptr, int ch, size_t pos)
 {
     char *end = (char *)ptr+pos-1;
@@ -60,12 +60,14 @@ void *memrchr(const void* ptr, int ch, size_t pos)
     return (*end == ch)?(end):(NULL);
 }
 
+#ifndef __ICCARM__
 int isblank(int ch)
 {
     if (ch == ' ' || ch == '\t')
         return 1;
     return 0;
 }
+#endif
 #endif
 
 #ifdef VI_ENABLE_SETOPTS

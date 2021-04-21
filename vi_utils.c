@@ -588,7 +588,7 @@ static int vasprintf(char **string_ptr, const char *format, va_list p)
         return (*string_ptr ? r : -1);
     }
 
-    *string_ptr = malloc(r+1);
+    *string_ptr = vi_malloc(r+1);
     r = (*string_ptr ? vsnprintf(*string_ptr, r+1, format, p2) : -1);
     va_end(p2);
 

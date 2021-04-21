@@ -570,6 +570,48 @@ int64_t read_key(int fd, char *buffer, int timeout)
     goto start_over;
 }
 
+static int vasprintf(char **string_ptr, const char *format, va_list p)
+{
+    int r;
+    va_list p2;
+    char buf[128];
+
+    va_copy(p2, p);
+    r = vsnprintf(buf, 128, format, p);
+    va_end(p);
+
+    /* Note: can't use xstrdup/xmalloc, they call vasprintf (us) on failure! */
+
+    if (r < 128) {
+        va_end(p2);
+        *string_ptr = strdup(buf);
+        return (*string_ptr ? r : -1);
+    }
+
+    *string_ptr = malloc(r+1);
+    r = (*string_ptr ? vsnprintf(*string_ptr, r+1, format, p2) : -1);
+    va_end(p2);
+
+    return r;
+}
+
+// Die with an error message if we can't malloc() enough space and do an
+// sprintf() into that space.
+char* xasprintf(const char *format, ...)
+{
+    va_list p;
+    int r;
+    char *string_ptr;
+
+    va_start(p, format);
+    r = vasprintf(&string_ptr, format, p);
+    va_end(p);
+    if (r < 0)
+        printf("die_memory_exhausted"); //bb_die_memory_exhausted();
+    return string_ptr;
+}
+
+
 #ifdef RT_USING_POSIX_TERMIOS
 static int wh_helper(int value, int def_val, const char *env_name, int *err)
 {

@@ -22,8 +22,8 @@
 
 #include <mem_sandbox.h>
 
-#define BB_VER "latest: 2021-04-07"
-#define BB_BT "busybox vi"
+#define BB_VER "latest: 2021-04-20"
+#define BB_BT  "busybox vi"
 
 //config:config FEATURE_VI_MAX_LEN
 //config:   int "Maximum screen width in vi"
@@ -224,6 +224,19 @@
 #define IF_FEATURE_VI_UNDO_QUEUE(...)
 #endif
 
+//config:config FEATURE_VI_VERBOSE_STATUS
+//config:   bool "Enable verbose status reporting"
+//config:   default y
+//config:   depends on VI
+//config:   help
+//config:   Enable more verbose reporting of the results of yank, change,
+//config:   delete, undo and substitution commands.
+#ifdef VI_ENABLE_VERBOSE_STATUS
+#define ENABLE_FEATURE_VI_VERBOSE_STATUS 1
+#else
+#define ENABLE_FEATURE_VI_VERBOSE_STATUS 0
+#endif
+
 //config:config FEATURE_VI_REGEX_SEARCH
 //config:   bool "Enable regex in search and replace"
 //config:   default n   # Uses GNU regex, which may be unavailable. FIXME
@@ -335,7 +348,6 @@ int isatty (int  fd);
 #define barrier() __asm__ __volatile__("":::"memory")
 #endif
 
-#define vi_putchar putchar
 #define vi_strtou strtoul
 #define fflush_all() fflush(NULL)
 
@@ -349,6 +361,7 @@ char *vi_strdup(const char *s);
 char *vi_strndup(const char *s, size_t n);
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
+char* xasprintf(const char *format, ...);
 
 #ifdef VI_ENABLE_SEARCH
 char* strchrnul(const char *s, int c);

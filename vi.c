@@ -121,23 +121,38 @@ struct globals {
     int text_size;      // size of the allocated buffer
 
     // the rest
+#if ENABLE_FEATURE_VI_SETOPTS
     smallint vi_setops;     // set by setops()
 #define VI_AUTOINDENT (1 << 0)
-#define VI_ERR_METHOD (1 << 1)
-#define VI_IGNORECASE (1 << 2)
-#define VI_SHOWMATCH  (1 << 3)
-#define VI_TABSTOP    (1 << 4)
+#define VI_EXPANDTAB  (1 << 1)
+#define VI_ERR_METHOD (1 << 2)
+#define VI_IGNORECASE (1 << 3)
+#define VI_SHOWMATCH  (1 << 4)
+#define VI_TABSTOP    (1 << 5)
 #define autoindent (vi_setops & VI_AUTOINDENT)
+#define expandtab (vi_setops & VI_EXPANDTAB )
 #define err_method (vi_setops & VI_ERR_METHOD) // indicate error with beep or flash
 #define ignorecase (vi_setops & VI_IGNORECASE)
 #define showmatch  (vi_setops & VI_SHOWMATCH )
+#define openabove  (vi_setops & VI_TABSTOP   )
 // order of constants and strings must match
 #define OPTS_STR \
         "ai\0""autoindent\0" \
+        "et\0""expandtab\0" \
         "fl\0""flash\0" \
         "ic\0""ignorecase\0" \
         "sm\0""showmatch\0" \
         "ts\0""tabstop\0"
+#define set_openabove() (vi_setops |= VI_TABSTOP)
+#define clear_openabove() (vi_setops &= ~VI_TABSTOP)
+#else
+#define autoindent (0)
+#define expandtab  (0)
+#define err_method (0)
+#define openabove  (0)
+#define set_openabove() ((void)0)
+#define clear_openabove() ((void)0)
+#endif
 
 #if ENABLE_FEATURE_VI_READONLY
     smallint readonly_mode;
@@ -176,11 +191,15 @@ struct globals {
 #if ENABLE_FEATURE_VI_CRASHME
     char last_input_char;    // last char read from user
 #endif
+#if ENABLE_FEATURE_VI_UNDO_QUEUE
+    char undo_queue_state;   // One of UNDO_INS, UNDO_DEL, UNDO_EMPTY
+#endif
 
 #if ENABLE_FEATURE_VI_DOT_CMD
     smallint adding2q;   // are we currently adding user input to q
     int lmc_len;             // length of last_modifying_cmd
     char *ioq, *ioq_start;   // pointer to string for get_one_char to "read"
+    int dotcnt;              // number of times to repeat '.' command
 #endif
 #if ENABLE_FEATURE_VI_SEARCH
     char *last_search_pattern; // last pattern from a '/' or '?' search
@@ -200,7 +219,6 @@ struct globals {
     char *reg[28];          // named register a-z, "D", and "U" 0-25,26,27
     char regtype[28];       // buffer type: WHOLE, MULTI or PARTIAL
     char *mark[28];         // user marks points somewhere in text[]-  a-z and previous context ''
-    char *context_start, *context_end;
 #endif
 #if ENABLE_FEATURE_VI_USE_SIGNALS
     sigjmp_buf restart;     // int_handler() jumps to location remembered here
@@ -234,25 +252,19 @@ struct globals {
 #define UNDO_DEL         1
 #define UNDO_INS_CHAIN   2
 #define UNDO_DEL_CHAIN   3
-// UNDO_*_QUEUED must be equal to UNDO_xxx ORed with UNDO_QUEUED_FLAG
-#define UNDO_QUEUED_FLAG 4
+# if ENABLE_FEATURE_VI_UNDO_QUEUE
 #define UNDO_INS_QUEUED  4
 #define UNDO_DEL_QUEUED  5
-#define UNDO_USE_SPOS   32
-#define UNDO_EMPTY      64
+# endif
 // Pass-through flags for functions that can be undone
 #define NO_UNDO          0
 #define ALLOW_UNDO       1
 #define ALLOW_UNDO_CHAIN 2
 # if ENABLE_FEATURE_VI_UNDO_QUEUE
 #define ALLOW_UNDO_QUEUED 3
-    char undo_queue_state;
-    int undo_q;
-    char *undo_queue_spos;  // Start position of queued operation
-    char undo_queue[CONFIG_FEATURE_VI_UNDO_QUEUE_MAX];
 # else
 // If undo queuing disabled, don't invoke the missing queue logic
-#define ALLOW_UNDO_QUEUED 1
+#define ALLOW_UNDO_QUEUED ALLOW_UNDO
 # endif
 
     struct undo_object {
@@ -262,6 +274,13 @@ struct globals {
         uint8_t u_type;     // 0=deleted, 1=inserted, 2=swapped
         char undo_text[1];  // text that was deleted (if deletion)
     } *undo_stack_tail;
+# if ENABLE_FEATURE_VI_UNDO_QUEUE
+#define UNDO_USE_SPOS   32
+#define UNDO_EMPTY      64
+    char *undo_queue_spos;  // Start position of queued operation
+    int undo_q;
+    char undo_queue[CONFIG_FEATURE_VI_UNDO_QUEUE_MAX];
+# endif
 #endif /* ENABLE_FEATURE_VI_UNDO */
 
 };
@@ -306,6 +325,7 @@ struct globals {
 #define lmc_len                 (G.lmc_len            )
 #define ioq                     (G.ioq                )
 #define ioq_start               (G.ioq_start          )
+#define dotcnt                  (G.dotcnt             )
 #define last_search_pattern     (G.last_search_pattern)
 
 #define edit_file__cur_line     (G.edit_file__cur_line)
@@ -316,8 +336,6 @@ struct globals {
 //#define Ureg           (G.Ureg          )
 #define regtype        (G.regtype )
 #define mark           (G.mark          )
-#define context_start  (G.context_start )
-#define context_end    (G.context_end   )
 #define restart        (G.restart       )
 #ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
 #define term_orig      (G.term_orig     )
@@ -376,7 +394,7 @@ static char *char_insert(char *, char, int);    // insert the char c at 'p'
 // might reallocate text[]! use p += stupid_insert(p, ...),
 // and be careful to not use pointers into potentially freed text[]!
 static uintptr_t stupid_insert(char *, char);   // stupidly insert the char c at 'p'
-static int find_range(char **, char **, char);  // return pointers for an object
+static int find_range(char **start, char **stop, int cmd);  // return pointers for an object
 static int st_test(char *, int, int, char *);   // helper for skip_thing()
 static char *skip_thing(char *, int, int, int); // skip some object
 static char *find_pair(char *, const char); // find matching pair ()  []  {}
@@ -397,8 +415,8 @@ static void cookmode(void); // return to "cooked" mode on tty
 // sleep for 'h' 1/100 seconds, return 1/0 if stdin is (ready for read)/(not ready)
 static int mysleep(int);
 static int get_one_char(void);  // read 1 char from stdin
-// file_insert might reallocate text[]!
-static int file_insert(const char *, char *, int);
+static int get_motion_char(void); // Get type of thing to operate on and adjust count
+static int file_insert(const char *, char *, int); // file_insert might reallocate text[]!
 static int file_write(char *, char *, char *);
 static void screen_erase(void);
 static void go_bottom_and_clear_to_eol(void);
@@ -455,7 +473,7 @@ static void check_context(char);    // remember context for '' command
 #endif
 #if ENABLE_FEATURE_VI_UNDO
 static void flush_undo_data(void);
-static void undo_push(char *, unsigned, unsigned char); // push an operation on the undo stack
+static void undo_push(char *, unsigned, int); // push an operation on the undo stack
 static void undo_push_insert(char *, int, int); // convenience function
 static void undo_pop(void); // undo the last operation
 # if ENABLE_FEATURE_VI_UNDO_QUEUE
@@ -790,90 +808,127 @@ static void edit_file(char *fn)
 
 //----- The Colon commands -------------------------------------
 #if ENABLE_FEATURE_VI_COLON
-static char *get_one_address(char *p, int *addr)    // get colon addr, if present
+static char *get_one_address(char *p, int *result)  // get colon addr, if present
 {
-    int st;
-    char *q;
-    IF_FEATURE_VI_YANKMARK(char c;)
+    int st, num, sign, addr, new_addr;
+# if ENABLE_FEATURE_VI_YANKMARK || ENABLE_FEATURE_VI_SEARCH
+    char *q, c;
+# endif
+    IF_FEATURE_VI_SEARCH(int dir;)
 
-    *addr = -1;         // assume no addr
-    if (*p == '.') {    // the current line
-        p++;
-        q = begin_line(dot);
-        *addr = count_lines(text, q);
-    }
-#if ENABLE_FEATURE_VI_YANKMARK
-    else if (*p == '\'') {  // is this a mark addr
-        p++;
-        c = tolower(*p);
-        p++;
-        if (c >= 'a' && c <= 'z') {
-            // we have a mark
-            c = c - 'a';
-            q = mark[(unsigned char) c];
-            if (q != NULL) {    // is mark valid
-                *addr = count_lines(text, q);
-            }
-        }
-    }
-#endif
-#if ENABLE_FEATURE_VI_SEARCH
-    else if (*p == '/') {   // a search pattern
-        q = strchrnul(p + 1, '/');
-        if (p + 1 != q) {
-            // save copy of new pattern
-            vi_free(last_search_pattern);
-            last_search_pattern = vi_strndup(p, q - p);
-        }
-        p = q;
-        if (*p == '/')
+    addr = -1;          // assume no addr
+    sign = 0;
+    for (;;) {
+        new_addr = -1;
+        if (isblank(*p)) {
             p++;
-        q = char_search(next_line(dot), last_search_pattern + 1,
-                        (FORWARD << 1) | FULL);
-        if (q != NULL) {
-            *addr = count_lines(text, q);
+        } else if (*p == '.') { // the current line
+            p++;
+            new_addr = count_lines(text, dot);
+        }
+# if ENABLE_FEATURE_VI_YANKMARK
+        else if (*p == '\'') {  // is this a mark addr
+            p++;
+            c = tolower(*p);
+            p++;
+            q = NULL;
+            if (c >= 'a' && c <= 'z') {
+                // we have a mark
+                c = c - 'a';
+                q = mark[(unsigned char) c];
+            }
+            if (q == NULL)  // is mark valid
+                return NULL;
+            new_addr = count_lines(text, q);
+        }
+# endif
+# if ENABLE_FEATURE_VI_SEARCH
+        else if (*p == '/' || *p == '?') {  // a search pattern
+            c = *p;
+            q = strchrnul(p + 1, c);
+            if (p + 1 != q) {
+                // save copy of new pattern
+                vi_free(last_search_pattern);
+                last_search_pattern = vi_strndup(p, q - p);
+            }
+            p = q;
+            if (*p == c)
+                p++;
+            if (c == '/') {
+                q = next_line(dot);
+                dir = (FORWARD << 1) | FULL;
+            } else {
+                q = begin_line(dot);
+                dir = ((unsigned)BACK << 1) | FULL;
+            }
+            q = char_search(q, last_search_pattern + 1, dir);
+            if (q == NULL)
+                return NULL;
+            new_addr = count_lines(text, q);
+        }
+# endif
+        else if (*p == '$') {   // the last line in file
+            p++;
+            new_addr = count_lines(text, end - 1);
+        } else if (isdigit(*p)) {
+            sscanf(p, "%d%n", &num, &st);
+            p += st;
+            if (addr < 0) { // specific line number
+                addr = num;
+            } else {    // offset from current addr
+                addr += sign >= 0 ? num : -num;
+            }
+            sign = 0;
+        } else if (*p == '-' || *p == '+') {
+            sign = *p++ == '-' ? -1 : 1;
+            if (addr < 0) { // default address is dot
+                addr = count_lines(text, dot);
+            }
+        } else {
+            addr += sign;   // consume unused trailing sign
+            break;
+        }
+        if (new_addr >= 0) {
+            if (addr >= 0)  // only one new address per expression
+                return NULL;
+            addr = new_addr;
         }
     }
-#endif
-    else if (*p == '$') {   // the last line in file
-        p++;
-        q = begin_line(end - 1);
-        *addr = count_lines(text, q);
-    } else if (isdigit(*p)) {   // specific line number
-        sscanf(p, "%d%n", addr, &st);
-        p += st;
-    } else {
-        // unrecognized address - assume -1
-        *addr = -1;
-    }
+    *result = addr;
     return p;
 }
 
+# define GET_FIRST  0
+# define GET_SECOND 1
+# define GOT_FIRST  2
+# define GOT_SECOND 3
+# define GOT 2
+
 static char *get_address(char *p, int *b, int *e)   // get two colon addrs, if present
 {
+    int state = GET_FIRST;
+
     //----- get the address' i.e., 1,3   'a,'b  -----
-    // get FIRST addr, if present
-    while (isblank(*p))
-        p++;                // skip over leading spaces
-    if (*p == '%') {            // alias for 1,$
-        p++;
-        *b = 1;
-        *e = count_lines(text, end-1);
-        goto ga0;
-    }
-    p = get_one_address(p, b);
-    while (isblank(*p))
-        p++;
-    if (*p == ',') {            // is there a address separator
-        p++;
-        while (isblank(*p))
+    for (;;) {
+        if (isblank(*p)) {
             p++;
-        // get SECOND addr, if present
-        p = get_one_address(p, e);
+        } else if (*p == '%' && state == GET_FIRST) {   // alias for 1,$
+            p++;
+            *b = 1;
+            *e = count_lines(text, end-1);
+            state = GOT_SECOND;
+        } else if (*p == ',' && state == GOT_FIRST) {
+            p++;
+            state = GET_SECOND;
+        } else if (state == GET_FIRST || state == GET_SECOND) {
+            p = get_one_address(p, state == GET_FIRST ? b : e);
+            if (p == NULL)
+                break;
+            state |= GOT;
+        } else {
+            break;
+        }
     }
- ga0:
-    while (isblank(*p))
-        p++;                // skip over trailing spaces
     return p;
 }
 
@@ -896,6 +951,7 @@ static void setops(char *args, int flg_no)
     index = 1 << (index >> 1); // convert to VI_bit
 
     if (index & VI_TABSTOP) {
+        // don't set this bit in vi_setops, it's reused as 'openabove'
         int t;
         if (!eq || flg_no) // no "=NNN" or it is "notabstop"?
             goto bad;
@@ -979,9 +1035,7 @@ static void colon(char *buf)
     char *fn, cmd[MAX_INPUT_LEN], args[MAX_INPUT_LEN];
     int i, l, li, b, e;
     int useforce;
-# if ENABLE_FEATURE_VI_SEARCH || ENABLE_FEATURE_ALLOW_EXEC
     char *orig_buf;
-# endif
 
     // :3154    // if (-e line 3154) goto it  else stay put
     // :4,33w! foo  // write a portion of buffer to file "foo"
@@ -1011,7 +1065,12 @@ static void colon(char *buf)
     fn = current_filename;
 
     // look for optional address(es)  :.  :1  :1,9   :'q,'a   :%
+    orig_buf = buf;
     buf = get_address(buf, &b, &e);
+    if (buf == NULL) {
+        status_line_bold("Bad address: %s", orig_buf);
+        goto ret;
+    }
 
 # if ENABLE_FEATURE_VI_SEARCH || ENABLE_FEATURE_ALLOW_EXEC
     // remember orig command line
@@ -1168,13 +1227,13 @@ static void colon(char *buf)
             if (c == '\n') {
                 write1("$\r");
             } else if (c < ' ' || c == 127) {
-                vi_putchar('^');
+                putchar('^');
                 if (c == 127)
                     c = '?';
                 else
                     c += '@';
             }
-            vi_putchar(c);
+            putchar(c);
             if (c_is_no_print)
                 standout_end();
         }
@@ -1270,11 +1329,13 @@ static void colon(char *buf)
 #if ENABLE_FEATURE_VI_SETOPTS
             status_line_bold(
                 "%sautoindent "
+                "%sexpandtab "
                 "%sflash "
                 "%signorecase "
                 "%sshowmatch "
                 "tabstop=%u",
                 autoindent ? "" : "no",
+                expandtab ? "" : "no",
                 err_method ? "" : "no",
                 ignorecase ? "" : "no",
                 showmatch ? "" : "no",
@@ -1302,10 +1363,11 @@ static void colon(char *buf)
     } else if (cmd[0] == 's') { // substitute a pattern with a replacement pattern
         char *F, *R, *flags;
         size_t len_F, len_R;
-        int gflag;      // global replace flag
-#if ENABLE_FEATURE_VI_UNDO
-        int dont_chain_first_item = ALLOW_UNDO;
-#endif
+        int gflag = 0;      // global replace flag
+        int subs = 0;   // number of substitutions
+#  if ENABLE_FEATURE_VI_VERBOSE_STATUS
+        int last_line = 0, lines = 0;
+#  endif
 
         // F points to the "find" pattern
         // R points to the "replace" pattern
@@ -1318,11 +1380,11 @@ static void colon(char *buf)
         len_F = R - F;
         *R++ = '\0';    // terminate "find"
         flags = strchr(R, c);
-        if (!flags)
-            goto colon_s_fail;
-        len_R = flags - R;
-        *flags++ = '\0';    // terminate "replace"
-        gflag = *flags;
+        if (flags) {
+            *flags++ = '\0';    // terminate "replace"
+            gflag = *flags;
+        }
+        len_R = strlen(R);
 
         q = begin_line(q);
         if (b < 0) {    // maybe :s/foo/bar/
@@ -1341,14 +1403,21 @@ static void colon(char *buf)
                 uintptr_t bias;
                 // we found the "find" pattern - delete it
                 // For undo support, the first item should not be chained
-                text_hole_delete(found, found + len_F - 1, dont_chain_first_item);
-#if ENABLE_FEATURE_VI_UNDO
-                dont_chain_first_item = ALLOW_UNDO_CHAIN;
-#endif
+                text_hole_delete(found, found + len_F - 1,
+                            subs ? ALLOW_UNDO_CHAIN: ALLOW_UNDO);
+                // can't do this above, no undo => no third argument
+                subs++;
+#  if ENABLE_FEATURE_VI_VERBOSE_STATUS
+                if (last_line != i) {
+                    last_line = i;
+                    ++lines;
+                }
+#  endif
                 // insert the "replace" patern
                 bias = string_insert(found, R, ALLOW_UNDO_CHAIN);
                 found += bias;
                 ls += bias;
+                dot = ls;
                 /*q += bias; - recalculated anyway */
                 // check for "global"  :s/foo/bar/g
                 if (gflag == 'g') {
@@ -1359,6 +1428,15 @@ static void colon(char *buf)
                 }
             }
             q = next_line(ls);
+        }
+        if (subs == 0) {
+            status_line_bold("No match");
+        } else {
+            dot_skip_over_ws();
+#  if ENABLE_FEATURE_VI_VERBOSE_STATUS
+            if (subs > 1)
+                status_line("%d substitutions on %d lines", subs, lines);
+#  endif
         }
 #endif /* FEATURE_VI_SEARCH */
     } else if (strncmp(cmd, "version", i) == 0) {  // show software version
@@ -1383,7 +1461,7 @@ static void colon(char *buf)
             fn = args;
         }
 #if ENABLE_FEATURE_VI_READONLY
-        if (readonly_mode && !useforce) {
+        else if (readonly_mode && !useforce) {
             status_line_bold("'%s' is read only", fn);
             goto ret;
         }
@@ -1466,6 +1544,30 @@ static int next_tabstop(int col)
     return col + ((tabstop - 1) - (col % tabstop));
 }
 
+static int prev_tabstop(int col)
+{
+    return col - ((col % tabstop) ?: tabstop);
+}
+
+static int next_column(char c, int co)
+{
+    if (c == '\t')
+        co = next_tabstop(co);
+    else if ((unsigned char)c < ' ' || c == 0x7f)
+        co++; // display as ^X, use 2 columns
+    return co + 1;
+}
+
+static int get_column(char *p)
+{
+    const char *r;
+    int co = 0;
+
+    for (r = begin_line(p); r < p; r++)
+        co = next_column(*r, co);
+    return co;
+}
+
 //----- Synchronize the cursor to Dot --------------------------
 static void sync_cursor(char *d, int *row, int *col)
 {
@@ -1515,21 +1617,16 @@ static void sync_cursor(char *d, int *row, int *col)
 
     // find out what col "d" is on
     co = 0;
-    while (tp < d) { // drive "co" to correct column
+    do { // drive "co" to correct column
         if (*tp == '\n') //vda || *tp == '\0')
             break;
-        if (*tp == '\t') {
-            // handle tabs like real vi
-            if (d == tp && cmd_mode) {
-                break;
-            }
-            co = next_tabstop(co);
-        } else if ((unsigned char)*tp < ' ' || *tp == 0x7f) {
-            co++; // display as ^X, use 2 columns
+        co = next_column(*tp, co) - 1;
+        // inserting text before a tab, don't include its position
+        if (cmd_mode && tp == d - 1 && *d == '\t') {
+            co++;
+            break;
         }
-        co++;
-        tp++;
-    }
+    } while (tp++ < d && ++co);
 
     // "co" is the column where "dot" is.
     // The screen has "columns" columns.
@@ -1688,17 +1785,11 @@ static char *move_to_col(char *p, int l)
 
     p = begin_line(p);
     co = 0;
-    while (co < l && p < end) {
+    do {
         if (*p == '\n') //vda || *p == '\0')
             break;
-        if (*p == '\t') {
-            co = next_tabstop(co);
-        } else if (*p < ' ' || *p == 127) {
-            co++; // display as ^X, use 2 columns
-        }
-        co++;
-        p++;
-    }
+        co = next_column(*p, co);
+    } while (co <= l && p++ < end);
     return p;
 }
 
@@ -1725,8 +1816,10 @@ static void dot_to_char(int cmd)
     do {
         do {
             q += dir;
-            if ((dir == FORWARD ? q > end - 1 : q < text) || *q == '\n')
+            if ((dir == FORWARD ? q > end - 1 : q < text) || *q == '\n') {
+                indicate_error();
                 return;
+            }
         } while (*q != last_search_char);
     } while (--cmdcnt > 0);
 
@@ -1933,6 +2026,11 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
 
 static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
 {
+#if ENABLE_FEATURE_VI_SETOPTS
+    char *q;
+    size_t len;
+#endif
+
     if (c == 22) {      // Is this an ctrl-V?
         p += stupid_insert(p, '^'); // use ^ to indicate literal next
         refresh(FALSE); // show the ^
@@ -1953,6 +2051,35 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
         if ((p[-1] != '\n') && (dot > text)) {
             p--;
         }
+    } else if (c == 4) {    // ctrl-D reduces indentation
+        int prev;
+        char *r, *bol;
+        bol = begin_line(p);
+        for (r = bol; r < end_line(p); ++r) {
+            if (!isblank(*r))
+                break;
+        }
+
+        prev = prev_tabstop(get_column(r));
+        while (r > bol && get_column(r) > prev) {
+            if (p > bol)
+                p--;
+            r--;
+            r = text_hole_delete(r, r, ALLOW_UNDO_QUEUED);
+        }
+#if ENABLE_FEATURE_VI_SETOPTS
+    } else if (c == '\t' && expandtab) {    // expand tab
+        int col = get_column(p);
+        col = next_tabstop(col) - col + 1;
+        while (col--) {
+# if ENABLE_FEATURE_VI_UNDO
+            undo_push_insert(p, 1, undo);
+# else
+            modified_count++;
+# endif
+            p += 1 + stupid_insert(p, ' ');
+        }
+#endif
     } else if (
         #ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
             c == term_orig.c_cc[VERASE] ||
@@ -1981,10 +2108,13 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
             showmatching(p - 1);
         }
         if (autoindent && c == '\n') {  // auto indent the new line
-            char *q;
-            size_t len;
-            q = prev_line(p);   // use prev line as template
+            // use current/previous line as template
+            q = openabove ? p : prev_line(p);
             len = strspn(q, " \t"); // space or tab
+            if (openabove) {
+                p--;        // this replaces dot_prev() in do_cmd()
+                q += len;   // template will be shifted by text_hole_make()
+            }
             if (len) {
                 uintptr_t bias;
                 bias = text_hole_make(p, len);
@@ -2019,32 +2149,59 @@ static int at_eof(const char *s)
     return ((s == end - 2 && s[1] == '\n') || s == end - 1);
 }
 
-static int find_range(char **start, char **stop, char c)
+static int find_range(char **start, char **stop, int cmd)
 {
     char *save_dot, *p, *q, *t;
     int buftype = -1;
+    int c;
 
     save_dot = dot;
     p = q = dot;
 
-    if (strchr("cdy><", c)) {
+#if ENABLE_FEATURE_VI_YANKMARK
+    if (cmd == 'Y') {
+        c = 'y';
+    } else
+#endif
+    {
+        c = get_motion_char();
+    }
+
+#if ENABLE_FEATURE_VI_YANKMARK
+    if ((cmd == 'Y' || cmd == c) && strchr("cdy><", c)) {
+#else
+    if (cmd == c && strchr("cd><", c)) {
+#endif
         // these cmds operate on whole lines
         buftype = WHOLE;
         if (--cmdcnt > 0)
             do_cmd('j');
-    } else if (strchr("^%$0bBeEfFtTh|{}\b\177", c)) {
-        // These cmds operate on char positions
-        buftype = PARTIAL;
+    } else if (strchr("^%$0bBeEfFtThnN/?|{}\b\177", c)) {
+        // Most operate on char positions within a line.  Of those that
+        // don't '%' needs no special treatment, search commands are
+        // marked as MULTI and  "{}" are handled below.
+        buftype = strchr("nN/?", c) ? MULTI : PARTIAL;
         do_cmd(c);      // execute movement cmd
         if (p == dot)   // no movement is an error
             buftype = -1;
     } else if (strchr("wW", c)) {
         buftype = MULTI;
         do_cmd(c);      // execute movement cmd
-        // step back one char, but not if we're at end of file
-        if (dot > p && !at_eof(dot))
+        // step back one char, but not if we're at end of file,
+        // or if we are at EOF and search was for 'w' and we're at
+        // the start of a 'W' word.
+        if (dot > p && (!at_eof(dot) || (c == 'w' && ispunct(*dot))))
             dot--;
-    } else if (strchr("GHL+-jk\r\n", c)) {
+        t = dot;
+        // don't include trailing WS as part of word
+        while (dot > p && isspace(*dot)) {
+            if (*dot-- == '\n')
+                t = dot;
+        }
+        // for non-change operations WS after NL is not part of word
+        if (cmd != 'c' && dot != t && *dot != '\n')
+            dot = t;
+    } else if (strchr("GHL+-jk'\r\n", c)) {
         // these operate on whole lines
         buftype = WHOLE;
         do_cmd(c);      // execute movement cmd
@@ -2059,8 +2216,11 @@ static int find_range(char **start, char **stop, char c)
             dot--;
     }
 
-    if (buftype == -1)
+    if (buftype == -1) {
+        if (c != 27)
+            indicate_error();
         return buftype;
+    }
 
     q = dot;
     if (q < p) {
@@ -2071,7 +2231,7 @@ static int find_range(char **start, char **stop, char c)
 
     // movements which don't include end of range
     if (q > p) {
-        if (strchr("^0bBFTh|\b\177", c)) {
+        if (strchr("^0bBFThnN/?|\b\177", c)) {
             q--;
         } else if (strchr("{}", c)) {
             buftype = (p == begin_line(p) && (*q == '\n' || at_eof(q))) ?
@@ -2084,7 +2244,7 @@ static int find_range(char **start, char **stop, char c)
         }
     }
 
-    if (buftype == WHOLE) {
+    if (buftype == WHOLE || cmd == '<' || cmd == '>') {
         p = begin_line(p);
         q = end_line(q);
     }
@@ -2211,9 +2371,12 @@ static void flush_undo_data(void)
 
 // Undo functions and hooks added by Jody Bruchon (jody@jodybruchon.com)
 // Add to the undo stack
-static void undo_push(char *src, unsigned length, uint8_t u_type)
+static void undo_push(char *src, unsigned length, int u_type)
 {
     struct undo_object *undo_entry;
+# if ENABLE_FEATURE_VI_UNDO_QUEUE
+    int use_spos = u_type & UNDO_USE_SPOS;
+# endif
 
     // "u_type" values
     // UNDO_INS: insertion, undo will remove from buffer
@@ -2222,8 +2385,8 @@ static void undo_push(char *src, unsigned length, uint8_t u_type)
     // The CHAIN operations are for handling multiple operations that the user
     // performs with a single action, i.e. REPLACE mode or find-and-replace commands
     // UNDO_{INS,DEL}_QUEUED: If queuing feature is enabled, allow use of the queue
-    // for the INS/DEL operation. The raw values should be equal to the values of
-    // UNDO_{INS,DEL} ORed with UNDO_QUEUED_FLAG
+    // for the INS/DEL operation.
+    // UNDO_{INS,DEL} ORed with UNDO_USE_SPOS: commit the undo queue
 
 #if ENABLE_FEATURE_VI_UNDO_QUEUE
     // This undo queuing functionality groups multiple character typing or backspaces
@@ -2277,8 +2440,7 @@ static void undo_push(char *src, unsigned length, uint8_t u_type)
         break;
     }
 #else
-    // If undo queuing is disabled, ignore the queuing flag entirely
-    u_type = u_type & ~UNDO_QUEUED_FLAG;
+    u_type &= ~UNDO_USE_SPOS;
 #endif
 
     // Allocate a new undo object
@@ -2295,12 +2457,11 @@ static void undo_push(char *src, unsigned length, uint8_t u_type)
     }
     undo_entry->length = length;
 #if ENABLE_FEATURE_VI_UNDO_QUEUE
-    if ((u_type & UNDO_USE_SPOS) != 0) {
+    if (use_spos) {
         undo_entry->start = undo_queue_spos - text; // use start position from queue
     } else {
         undo_entry->start = src - text; // use offset from start of text buffer
     }
-    u_type = (u_type & ~UNDO_USE_SPOS);
 #else
     undo_entry->start = src - text;
 #endif
@@ -2353,10 +2514,12 @@ static void undo_pop(void)
         u_start = text + undo_entry->start;
         text_hole_make(u_start, undo_entry->length);
         rt_memcpy(u_start, undo_entry->undo_text, undo_entry->length);
+# if ENABLE_FEATURE_VI_VERBOSE_STATUS
         status_line("Undo [%d] %s %d chars at position %d",
             modified_count, "restored",
             undo_entry->length, undo_entry->start
         );
+# endif
         break;
     case UNDO_INS:
     case UNDO_INS_CHAIN:
@@ -2364,10 +2527,12 @@ static void undo_pop(void)
         u_start = undo_entry->start + text;
         u_end = u_start - 1 + undo_entry->length;
         text_hole_delete(u_start, u_end, NO_UNDO);
+# if ENABLE_FEATURE_VI_VERBOSE_STATUS
         status_line("Undo [%d] %s %d chars at position %d",
             modified_count, "deleted",
             undo_entry->length, undo_entry->start
         );
+# endif
         break;
     }
     repeat = 0;
@@ -2564,13 +2729,9 @@ static void show_help(void)
 static void start_new_cmd_q(char c)
 {
     // get buffer for new cmd
-    // if there is a current cmd count put it in the buffer first
-    if (cmdcnt > 0) {
-        lmc_len = sprintf(last_modifying_cmd, "%u%c", cmdcnt, c);
-    } else { // just save char c onto queue
-        last_modifying_cmd[0] = c;
-        lmc_len = 1;
-    }
+    dotcnt = cmdcnt ?: 1;
+    last_modifying_cmd[0] = c;
+    lmc_len = 1;
     adding2q = 1;
 }
 
@@ -2600,16 +2761,6 @@ static uintptr_t string_insert(char *p, const char *s, int undo) // insert the s
     bias = text_hole_make(p, i);
     p += bias;
     rt_memcpy(p, s, i);
-#if ENABLE_FEATURE_VI_YANKMARK
-    {
-        int cnt;
-        for (cnt = 0; *s != '\0'; s++) {
-            if (*s == '\n')
-                cnt++;
-        }
-        status_line("Put %d lines (%d chars) from [%c]", cnt, i, what_reg());
-    }
-#endif
     return bias;
 }
 #endif
@@ -2619,13 +2770,16 @@ static uintptr_t string_insert(char *p, const char *s, int undo) // insert the s
 // copy text into a register
 static char *text_yank(char *p, char *q, int dest, int buftype)
 {
+    char *oldreg = reg[dest];
     int cnt = q - p;
     if (cnt < 0) {      // they are backwards- reverse them
         p = q;
         cnt = -cnt;
     }
-    vi_free(reg[dest]);    //  if already a yank register, free it
+    // Don't free register yet.  This prevents the memory allocator
+    // from reusing the free block so we can detect if it's changed.
     reg[dest] = vi_strndup(p, cnt + 1);
+    vi_free(oldreg);
     return p;
 }
 
@@ -2645,18 +2799,10 @@ static char what_reg(void)
 
 static void check_context(char cmd)
 {
-    // A context is defined to be "modifying text"
-    // Any modifying command establishes a new context.
-
-    if (dot < context_start || dot > context_end) {
-        if (strchr(modifying_cmds, cmd) != NULL) {
-            // we are trying to modify text[]- make this the current context
-            mark[27] = mark[26];    // move cur to prev
-            mark[26] = dot; // move local to cur
-            context_start = prev_line(prev_line(dot));
-            context_end = next_line(next_line(dot));
-            //loiter= start_loiter= now;
-        }
+    // Certain movement commands update the context.
+    if (strchr(":%{}'GHLMz/?Nn", cmd) != NULL) {
+        mark[27] = mark[26];    // move cur to prev
+        mark[26] = dot; // move local to cur
     }
 }
 
@@ -2672,11 +2818,25 @@ static char *swap_context(char *p) // goto new context for '' command make this 
         mark[27] = mark[26];
         mark[26] = tmp;
         p = mark[26];   // where we are going- previous context
-        context_start = prev_line(prev_line(prev_line(p)));
-        context_end = next_line(next_line(next_line(p)));
     }
     return p;
 }
+
+# if ENABLE_FEATURE_VI_VERBOSE_STATUS
+static void yank_status(const char *op, const char *p, int cnt)
+{
+    int lines, chars;
+
+    lines = chars = 0;
+    while (*p) {
+        ++chars;
+        if (*p++ == '\n')
+            ++lines;
+    }
+    status_line("%s %d lines (%d chars) from [%c]",
+                op, lines * cnt, chars * cnt, what_reg());
+}
+# endif
 #endif /* FEATURE_VI_YANKMARK */
 
 //----- Set terminal attributes --------------------------------
@@ -2800,8 +2960,8 @@ static int get_one_char(void)
     }
     // we are adding STDIN chars to q.
     c = readit();
-    if (lmc_len >= ARRAY_SIZE(last_modifying_cmd) - 1) {
-        // last_modifying_cmd[] is too small, can't remeber the cmd
+    if (lmc_len >= ARRAY_SIZE(last_modifying_cmd) - 2) {
+        // last_modifying_cmd[] is too small, can't remember the cmd
         // - drop it
         adding2q = 0;
         lmc_len = 0;
@@ -2820,11 +2980,16 @@ static int get_motion_char(void)
     int c, cnt;
 
     c = get_one_char();
-    if (c != '0' && isdigit(c)) {
-        // get any non-zero motion count
-        for (cnt = 0; isdigit(c); c = get_one_char())
-            cnt = cnt * 10 + (c - '0');
-        cmdcnt = (cmdcnt ? cmdcnt : 1) * cnt;
+    if (isdigit(c)) {
+        if (c != '0') {
+            // get any non-zero motion count
+            for (cnt = 0; isdigit(c); c = get_one_char())
+                cnt = cnt * 10 + (c - '0');
+            cmdcnt = (cmdcnt ?: 1) * cnt;
+        } else {
+            // ensure standalone '0' works
+            cmdcnt = 0;
+        }
     }
 
     return c;
@@ -2863,7 +3028,7 @@ static char *get_input_line(const char *prompt)
             // (TODO: need to handle Unicode)
             buf[i] = c;
             buf[++i] = '\0';
-            vi_putchar(c);
+            putchar(c);
         }
     }
     refresh(FALSE);
@@ -3414,6 +3579,13 @@ static void do_cmd(int c)
     int dir;
     int cnt, i, j;
     int c1;
+#if ENABLE_FEATURE_VI_YANKMARK
+    char *orig_dot = dot;
+#endif
+#if ENABLE_FEATURE_VI_UNDO
+    int allow_undo = ALLOW_UNDO;
+    int undo_del = UNDO_DEL;
+#endif
 
 //  c1 = c; // quiet the compiler
 //  cnt = yf = 0; // quiet the compiler
@@ -3603,6 +3775,9 @@ static void do_cmd(int c)
             dot = swap_context(dot);    // swap current and previous context
             dot_begin();    // go to B-o-l
             dot_skip_over_ws();
+#if ENABLE_FEATURE_VI_YANKMARK
+            orig_dot = dot; // this doesn't update stored contexts
+#endif
         } else {
             indicate_error();
         }
@@ -3627,12 +3802,14 @@ static void do_cmd(int c)
             status_line_bold("Nothing in register %c", what_reg());
             break;
         }
+        cnt = 0;
+        i = cmdcnt ?: 1;
         // are we putting whole lines or strings
         if (regtype[YDreg] == WHOLE) {
             if (c == 'P') {
                 dot_begin();    // putting lines- Put above
             }
-            if (c == 'p') {
+            else /* if ( c == 'p') */ {
                 // are we putting after very last line?
                 if (end_line(dot) == (end - 1)) {
                     dot = end;  // force dot to end of text[]
@@ -3643,8 +3820,21 @@ static void do_cmd(int c)
         } else {
             if (c == 'p')
                 dot_right();    // move to right, can move to NL
+            // how far to move cursor if register doesn't have a NL
+            if (strchr(p, '\n') == NULL)
+                cnt = i * strlen(p) - 1;
         }
-        string_insert(dot, p, ALLOW_UNDO);  // insert the string
+        do {
+            // dot is adjusted if text[] is reallocated so we don't have to
+            string_insert(dot, p, allow_undo);  // insert the string
+# if ENABLE_FEATURE_VI_UNDO
+            allow_undo = ALLOW_UNDO_CHAIN;
+# endif
+        } while (--cmdcnt > 0);
+        dot += cnt;
+# if ENABLE_FEATURE_VI_YANKMARK && ENABLE_FEATURE_VI_VERBOSE_STATUS
+        yank_status("Put", p, i);
+# endif
         end_cmd_q();    // stop adding to q
         break;
     case 'U':           // U- Undo; replace current line with original version
@@ -3655,6 +3845,9 @@ static void do_cmd(int c)
             p += string_insert(p, reg[Ureg], ALLOW_UNDO_CHAIN); // insert orig line
             dot = p;
             dot_skip_over_ws();
+# if ENABLE_FEATURE_VI_YANKMARK && ENABLE_FEATURE_VI_VERBOSE_STATUS
+            yank_status("Undo", reg[Ureg], 1);
+# endif
         }
         break;
 #endif /* FEATURE_VI_YANKMARK */
@@ -3712,93 +3905,87 @@ static void do_cmd(int c)
         // Stuff the last_modifying_cmd back into stdin
         // and let it be re-executed.
         if (lmc_len != 0) {
-            ioq = ioq_start = vi_strndup(last_modifying_cmd, lmc_len);
+            if (cmdcnt) // update saved count if current count is non-zero
+                dotcnt = cmdcnt;
+            last_modifying_cmd[lmc_len] = '\0';
+            ioq = ioq_start = xasprintf("%u%s", dotcnt, last_modifying_cmd);
         }
         break;
 #endif
 #if ENABLE_FEATURE_VI_SEARCH
-    case '?':           // /- search for a pattern
-    case '/':           // /- search for a pattern
+    case 'N':           // N- backward search for last pattern
+        dir = last_search_pattern[0] == '/' ? BACK : FORWARD;
+        goto dc4;       // now search for pattern
+        break;
+    case '?':           // ?- backward search for a pattern
+    case '/':           // /- forward search for a pattern
         buf[0] = c;
         buf[1] = '\0';
         q = get_input_line(buf);    // get input line- use "status line"
-        if (q[0] && !q[1]) {
+        if (!q[0])  // user changed mind and erased the "/"-  do nothing
+            break;
+        if (!q[1]) {    // if no pat re-use old pat
             if (last_search_pattern[0])
                 last_search_pattern[0] = c;
-            goto dc3; // if no pat re-use old pat
-        }
-        if (q[0]) {       // strlen(q) > 1: new pat- save it and find
-            // there is a new pat
+        } else {    // strlen(q) > 1: new pat- save it and find
             vi_free(last_search_pattern);
             last_search_pattern = vi_strdup(q);
-            goto dc3;   // now find the pattern
         }
-        // user changed mind and erased the "/"-  do nothing
-        break;
-    case 'N':           // N- backward search for last pattern
-        dir = BACK;     // assume BACKWARD search
-        p = dot - 1;
-        if (last_search_pattern[0] == '?') {
-            dir = FORWARD;
-            p = dot + 1;
-        }
-        goto dc4;       // now search for pattern
+        // fall through
     case 'n':           // n- repeat search for last pattern
         // search rest of text[] starting at next char
-        // if search fails return orignal "p" not the "p+1" address
-        do {
-            const char *msg;
- dc3:
-            dir = FORWARD;  // assume FORWARD search
-            p = dot + 1;
-            if (last_search_pattern[0] == '?') {
-                dir = BACK;
-                p = dot - 1;
-            }
+        // if search fails "dot" is unchanged
+        dir = last_search_pattern[0] == '/' ? FORWARD : BACK;
  dc4:
-            q = char_search(p, last_search_pattern + 1, (dir << 1) | FULL);
+        if (last_search_pattern[1] == '\0') {
+            status_line_bold("No previous search");
+            break;
+        }
+        do {
+            q = char_search(dot + dir, last_search_pattern + 1,
+                     (dir << 1) | FULL);
             if (q != NULL) {
                 dot = q;    // good search, update "dot"
-                msg = NULL;
-                goto dc2;
-            }
-            // no pattern found between "dot" and "end"- continue at top
-            p = text;
-            if (dir == BACK) {
-                p = end - 1;
-            }
-            q = char_search(p, last_search_pattern + 1, (dir << 1) | FULL);
-            if (q != NULL) {    // found something
-                dot = q;    // found new pattern- goto it
-                msg = "search hit BOTTOM, continuing at TOP";
-                if (dir == BACK) {
-                    msg = "search hit TOP, continuing at BOTTOM";
-                }
             } else {
-                msg = "Pattern not found";
+                // no pattern found between "dot" and top/bottom of file
+                // continue from other end of file
+                const char *msg;
+                q = char_search(dir == FORWARD ? text : end - 1,
+                        last_search_pattern + 1, (dir << 1) | FULL);
+                if (q != NULL) {    // found something
+                    dot = q;    // found new pattern- goto it
+                    msg = "search hit %s, continuing at %s";
+                } else {    // pattern is nowhere in file
+                    cmdcnt = 0; // force exit from loop
+                    msg = "Pattern not found";
+                }
+                if (dir == FORWARD)
+                    status_line_bold(msg, "BOTTOM", "TOP");
+                else
+                    status_line_bold(msg, "TOP", "BOTTOM");
             }
- dc2:
-            if (msg)
-                status_line_bold("%s", msg);
         } while (--cmdcnt > 0);
         break;
     case '{':           // {- move backward paragraph
     case '}':           // }- move forward paragraph
+        dir = c == '}' ? FORWARD : BACK;
         do {
-            dir = c == '}' ? FORWARD : BACK;
-            // skip over consecutive empty lines
-            while ((dir == FORWARD ? dot < end - 1 : dot > text) &&
-                        *dot == '\n' && dot[dir] == '\n') {
+            int skip = TRUE; // initially skip consecutive empty lines
+            while (dir == FORWARD ? dot < end - 1 : dot > text) {
+                if (*dot == '\n' && dot[dir] == '\n') {
+                    if (!skip) {
+                        if (dir == FORWARD)
+                            ++dot;  // move to next blank line
+                        goto dc2;
+                    }
+                }
+                else {
+                    skip = FALSE;
+                }
                 dot += dir;
             }
-            q = char_search(dot, "\n\n", ((unsigned)dir << 1) | FULL);
-            if (q != NULL) {    // found blank line
-                dot = next_line(q); // move to next blank line
-            }
-            else {  // blank line not found, move to end of file
-                dot = dir == FORWARD ? end - 1 : text;
-                break;
-            }
+            goto dc6; // end of file
+ dc2:       continue;
         } while (--cmdcnt > 0);
         break;
 #endif /* FEATURE_VI_SEARCH */
@@ -3825,31 +4012,31 @@ static void do_cmd(int c)
     case '<':           // <- Left  shift something
     case '>':           // >- Right shift something
         cnt = count_lines(text, dot);   // remember what line we are on
-        c1 = get_motion_char(); // get the type of thing to operate on
-        if (find_range(&p, &q, c1) == -1) {
-            indicate_error();
+        if (find_range(&p, &q, c) == -1)
             goto dc6;
-        }
-        yank_delete(p, q, WHOLE, YANKONLY, NO_UNDO);    // save copy before change
-        p = begin_line(p);
-        q = end_line(q);
         i = count_lines(p, q);  // # of lines we are shifting
         for ( ; i > 0; i--, p = next_line(p)) {
             if (c == '<') {
-                // shift left- remove tab or 8 spaces
+                // shift left- remove tab or tabstop spaces
                 if (*p == '\t') {
                     // shrink buffer 1 char
-                    text_hole_delete(p, p, NO_UNDO);
+                    text_hole_delete(p, p, allow_undo);
                 } else if (*p == ' ') {
                     // we should be calculating columns, not just SPACE
                     for (j = 0; *p == ' ' && j < tabstop; j++) {
-                        text_hole_delete(p, p, NO_UNDO);
+                        text_hole_delete(p, p, allow_undo);
+#if ENABLE_FEATURE_VI_UNDO
+                        allow_undo = ALLOW_UNDO_CHAIN;
+#endif
                     }
                 }
-            } else if (c == '>') {
-                // shift right -- add tab or 8 spaces
-                char_insert(p, '\t', ALLOW_UNDO);
+            } else /* if (c == '>') */ {
+                // shift right -- add tab or tabstop spaces
+                char_insert(p, '\t', allow_undo);
             }
+#if ENABLE_FEATURE_VI_UNDO
+            allow_undo = ALLOW_UNDO_CHAIN;
+#endif
         }
         dot = find_line(cnt);   // what line were we on
         dot_skip_over_ws();
@@ -3968,19 +4155,19 @@ static void do_cmd(int c)
             dot = next_line(dot);
         dot_skip_over_ws();
         break;
-    case 'O':           // O- open a empty line above
-        //    0i\n ESC -i
-        p = begin_line(dot);
-        if (p[-1] == '\n') {
+    case 'O':           // O- open an empty line above
+        dot_begin();
+        set_openabove();
+        goto dc3;
+    case 'o':           // o- open an empty line below
+        dot_end();
+ dc3:
+        dot = char_insert(dot, '\n', ALLOW_UNDO);
+        if (c == 'O' && !autoindent) {
+            // done in char_insert() for openabove+autoindent
             dot_prev();
-    case 'o':           // o- open a empty line below; Yes, I know it is in the middle of the "if (..."
-            dot_end();
-            dot = char_insert(dot, '\n', ALLOW_UNDO);
-        } else {
-            dot_begin();    // 0
-            dot = char_insert(dot, '\n', ALLOW_UNDO);   // i\n ESC
-            dot_prev(); // -
         }
+        clear_openabove();
         goto dc_i;
     case 'R':           // R- continuous Replace char
  dc5:
@@ -4001,7 +4188,10 @@ static void do_cmd(int c)
             if (dot[dir] != '\n') {
                 if (c == 'X')
                     dot--;  // delete prev char
-                dot = yank_delete(dot, dot, PARTIAL, YANKDEL, ALLOW_UNDO);  // delete char
+                dot = yank_delete(dot, dot, PARTIAL, YANKDEL, allow_undo);  // delete char
+#if ENABLE_FEATURE_VI_UNDO
+                allow_undo = ALLOW_UNDO_CHAIN;
+#endif
             }
         } while (--cmdcnt > 0);
         end_cmd_q();    // stop adding to q
@@ -4061,39 +4251,20 @@ static void do_cmd(int c)
     case 'Y':           // Y- Yank a line
 #endif
     {
+        int yf = YANKDEL;   // assume either "c" or "d"
+        int buftype;
 #if ENABLE_FEATURE_VI_YANKMARK
+# if ENABLE_FEATURE_VI_VERBOSE_STATUS
         char *savereg = reg[YDreg];
-#endif
-        int yf, buftype = 0;
-        yf = YANKDEL;   // assume either "c" or "d"
-#if ENABLE_FEATURE_VI_YANKMARK
+# endif
         if (c == 'y' || c == 'Y')
             yf = YANKONLY;
+        save_dot = dot;
 #endif
-        c1 = 'y';
-        if (c != 'Y') {
-            c1 = get_motion_char(); // get the type of thing to operate on
-            if (c1 == 27)   // ESC- user changed mind and wants out
-                goto dc6;
-        }
         // determine range, and whether it spans lines
-        buftype = find_range(&p, &q, c1);
-        place_cursor(0, 0);
-        if (buftype == -1) { // invalid range
-            indicate_error();
+        buftype = find_range(&p, &q, c);
+        if (buftype == -1)  // invalid range
             goto dc6;
-        }
-        if (c1 == 'w' || c1 == 'W') {
-            char *q0 = q;
-            // don't include trailing WS as part of word
-            while (q > p && isspace(*q)) {
-                if (*q-- == '\n')
-                    q0 = q;
-            }
-            // for non-change operations WS after NL is not part of word
-            if (c != 'c' && q != p && *q != '\n')
-                q = q0;
-        }
         dot = yank_delete(p, q, buftype, yf, ALLOW_UNDO);   // delete word
         if (buftype == WHOLE) {
             if (c == 'c') {
@@ -4106,30 +4277,20 @@ static void do_cmd(int c)
                 dot_begin();
                 dot_skip_over_ws();
             }
+#if ENABLE_FEATURE_VI_YANKMARK
+            else /* (c == 'y' || c == 'Y') */ {
+                dot = save_dot;
+            }
+#endif
         }
         // if CHANGING, not deleting, start inserting after the delete
         if (c == 'c') {
-            //strcpy(buf, "Change");
             goto dc_i;  // start inserting
         }
-#if ENABLE_FEATURE_VI_YANKMARK
+#if ENABLE_FEATURE_VI_YANKMARK && ENABLE_FEATURE_VI_VERBOSE_STATUS
         // only update status if a yank has actually happened
-        if (reg[YDreg] != savereg) {
-            if (c == 'd') {
-                strcpy(buf, "Delete");
-            }
-            if (c == 'y' || c == 'Y') {
-                strcpy(buf, "Yank");
-            }
-            p = reg[YDreg];
-            q = p + strlen(p);
-            for (cnt = 0; p <= q; p++) {
-                if (*p == '\n')
-                    cnt++;
-            }
-            status_line("%s %u lines (%u chars) using [%c]",
-                buf, cnt, (unsigned)strlen(reg[YDreg]), what_reg());
-        }
+        if (reg[YDreg] != savereg)
+            yank_status(c == 'd' ? "Delete" : "Yank", reg[YDreg], 1);
 #endif
  dc6:
         end_cmd_q();    // stop adding to q
@@ -4146,9 +4307,18 @@ static void do_cmd(int c)
         break;
     case 'r':           // r- replace the current char with user input
         c1 = get_one_char();    // get the replacement char
-        if (*dot != '\n') {
-            dot = text_hole_delete(dot, dot, ALLOW_UNDO);
-            dot = char_insert(dot, c1, ALLOW_UNDO_CHAIN);
+        if (c1 != 27) {
+            if (end_line(dot) - dot < (cmdcnt ?: 1)) {
+                indicate_error();
+                goto dc6;
+            }
+            do {
+                dot = text_hole_delete(dot, dot, allow_undo);
+#if ENABLE_FEATURE_VI_UNDO
+                allow_undo = ALLOW_UNDO_CHAIN;
+#endif
+                dot = char_insert(dot, c1, allow_undo);
+            } while (--cmdcnt > 0);
             dot_left();
         }
         end_cmd_q();    // stop adding to q
@@ -4183,14 +4353,11 @@ static void do_cmd(int c)
     case '~':           // ~- flip the case of letters   a-z -> A-Z
         do {
 #if ENABLE_FEATURE_VI_UNDO
-            if (islower(*dot)) {
-                undo_push(dot, 1, UNDO_DEL);
-                *dot = toupper(*dot);
+            if (isalpha(*dot)) {
+                undo_push(dot, 1, undo_del);
+                *dot = islower(*dot) ? toupper(*dot) : tolower(*dot);
                 undo_push(dot, 1, UNDO_INS_CHAIN);
-            } else if (isupper(*dot)) {
-                undo_push(dot, 1, UNDO_DEL);
-                *dot = tolower(*dot);
-                undo_push(dot, 1, UNDO_INS_CHAIN);
+                undo_del = UNDO_DEL_CHAIN;
             }
 #else
             if (islower(*dot)) {
@@ -4238,7 +4405,8 @@ static void do_cmd(int c)
         dot = bound_dot(dot);   // make sure "dot" is valid
     }
 #if ENABLE_FEATURE_VI_YANKMARK
-    check_context(c);   // update the current context
+    if (dot != orig_dot)
+        check_context(c);   // update the current context
 #endif
 
     if (!isdigit(c))

@@ -1460,22 +1460,25 @@ static void colon(char *buf)
             }
             fn = args;
         }
-#if ENABLE_FEATURE_VI_READONLY
+# if ENABLE_FEATURE_VI_READONLY
         else if (readonly_mode && !useforce) {
             status_line_bold("'%s' is read only", fn);
             goto ret;
         }
-#endif
-        // how many lines in text[]?
-        li = count_lines(q, r);
-        size = r - q + 1;
+# endif
         //if (useforce) {
             // if "fn" is not write-able, chmod u+w
             // sprintf(syscmd, "chmod u+w %s", fn);
             // system(syscmd);
             // forced = TRUE;
         //}
-        l = file_write(fn, q, r);
+        if (modified_count != 0 || cmd[0] != 'x') {
+            size = r - q + 1;
+            l = file_write(fn, q, r);
+        } else {
+            size = 0;
+            l = 0;
+        }
         //if (useforce && forced) {
             // chmod u-w
             // sprintf(syscmd, "chmod u-w %s", fn);
@@ -1502,7 +1505,7 @@ static void colon(char *buf)
                 }
             }
         }
-#if ENABLE_FEATURE_VI_YANKMARK
+# if ENABLE_FEATURE_VI_YANKMARK
     } else if (strncmp(cmd, "yank", i) == 0) {  // yank lines
         if (b < 0) {    // no addr given- use defaults
             q = begin_line(dot);    // assume .,. for the range
@@ -1512,7 +1515,7 @@ static void colon(char *buf)
         li = count_lines(q, r);
         status_line("Yank %d lines (%d chars) into [%c]",
                 li, strlen(reg[YDreg]), what_reg());
-#endif
+# endif
     } else {
         // cmd unknown
         not_implemented(cmd);
@@ -1520,10 +1523,10 @@ static void colon(char *buf)
  ret:
     dot = bound_dot(dot);   // make sure "dot" is valid
     return;
-#if ENABLE_FEATURE_VI_SEARCH
+# if ENABLE_FEATURE_VI_SEARCH
  colon_s_fail:
     status_line(":s expression missing delimiters");
-#endif
+# endif
 #endif /* FEATURE_VI_COLON */
 }
 

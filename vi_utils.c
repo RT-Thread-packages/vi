@@ -584,7 +584,7 @@ static int vasprintf(char **string_ptr, const char *format, va_list p)
 
     if (r < 128) {
         va_end(p2);
-        *string_ptr = strdup(buf);
+        *string_ptr = vi_strdup(buf);
         return (*string_ptr ? r : -1);
     }
 

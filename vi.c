@@ -86,7 +86,7 @@ enum {
 //#define ESC_CURSOR_UP   ESC"[A"
 //#define ESC_CURSOR_DOWN "\n"
 
-#if ENABLE_FEATURE_VI_DOT_CMD || ENABLE_FEATURE_VI_YANKMARK
+#if ENABLE_FEATURE_VI_DOT_CMD
 static const char modifying_cmds[] ALIGN1 = "aAcCdDiIJoOpPrRs""xX<>~";
 #endif
 
@@ -182,6 +182,9 @@ struct globals {
                              // [don't make smallint!]
     int last_status_cksum;   // hash of current status line
     char *current_filename;
+#if ENABLE_FEATURE_VI_COLON_EXPAND
+    char *alt_filename;
+#endif
     char *screenbegin;       // index into text[], of top line on the screen
     char *screen;            // pointer to the virtual screen buffer
     int screensize;          //            and its size
@@ -307,6 +310,7 @@ struct globals {
 #define have_status_msg         (G.have_status_msg    )
 #define last_status_cksum       (G.last_status_cksum  )
 #define current_filename        (G.current_filename   )
+#define alt_filename            (G.alt_filename       )
 #define screen                  (G.screen             )
 #define screensize              (G.screensize         )
 #define screenbegin             (G.screenbegin        )
@@ -607,6 +611,41 @@ static int vi_main(int argc, char **argv)
 }
 MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);
 
+#if ENABLE_FEATURE_VI_COLON_EXPAND
+static void init_filename(char *fn)
+{
+    char *copy = mem_sandbox_strdup(fn);
+
+    if (current_filename == NULL) {
+        current_filename = copy;
+    } else {
+        mem_sandbox_free(alt_filename);
+        alt_filename = copy;
+    }
+}
+#else
+# define init_filename(f) ((void)(0))
+#endif
+
+static void update_filename(char *fn)
+{
+#if ENABLE_FEATURE_VI_COLON_EXPAND
+    if (fn == NULL)
+        return;
+
+    if (current_filename == NULL || strcmp(fn, current_filename) != 0) {
+        mem_sandbox_free(alt_filename);
+        alt_filename = current_filename;
+        current_filename = mem_sandbox_strdup(fn);
+    }
+#else
+    if (fn != current_filename) {
+        vi_free(current_filename);
+        current_filename = vi_strdup(fn);
+    }
+#endif
+}
+
 /* read text from file or create an empty buf */
 /* will also update current_filename */
 static int init_text_buffer(char *fn)
@@ -626,10 +665,7 @@ static int init_text_buffer(char *fn)
     text_size = 10240;
     screenbegin = dot = end = text = vi_zalloc(text_size);
 
-    if (fn != current_filename) {
-        vi_free(current_filename);
-        current_filename = vi_strdup(fn);
-    }
+    update_filename(fn);
     rc = file_insert(fn, text, 1);
     if (rc < 0) {
         // file doesnt exist. Start empty buf with dummy line
@@ -693,7 +729,6 @@ static void edit_file(char *fn)
     mark[26] = mark[27] = text; // init "previous context"
 #endif
 
-    last_search_char = '\0';
 #if ENABLE_FEATURE_VI_CRASHME
     last_input_char = '\0';
 #endif
@@ -720,7 +755,6 @@ static void edit_file(char *fn)
 #if ENABLE_FEATURE_VI_DOT_CMD
     vi_free(ioq_start);
     ioq_start = NULL;
-    lmc_len = 0;
     adding2q = 0;
 #endif
 
@@ -898,37 +932,43 @@ static char *get_one_address(char *p, int *result)  // get colon addr, if presen
     return p;
 }
 
-# define GET_FIRST  0
-# define GET_SECOND 1
-# define GOT_FIRST  2
-# define GOT_SECOND 3
-# define GOT 2
+# define GET_ADDRESS   0
+# define GET_SEPARATOR 1
 
-static char *get_address(char *p, int *b, int *e)   // get two colon addrs, if present
+// Read line addresses for a colon command.  The user can enter as
+// many as they like but only the last two will be used.
+static char *get_address(char *p, int *b, int *e)
 {
-    int state = GET_FIRST;
+    int state = GET_ADDRESS;
+    char *save_dot = dot;
 
     //----- get the address' i.e., 1,3   'a,'b  -----
     for (;;) {
         if (isblank(*p)) {
             p++;
-        } else if (*p == '%' && state == GET_FIRST) {   // alias for 1,$
+        } else if (*p == '%' && state == GET_ADDRESS) { // alias for 1,$
             p++;
             *b = 1;
             *e = count_lines(text, end-1);
-            state = GOT_SECOND;
-        } else if (*p == ',' && state == GOT_FIRST) {
+            state = GET_SEPARATOR;
+        } else if (state == GET_SEPARATOR && (*p == ',' || *p == ';')) {
+            if (*p == ';')
+                dot = find_line(*e);
             p++;
-            state = GET_SECOND;
-        } else if (state == GET_FIRST || state == GET_SECOND) {
-            p = get_one_address(p, state == GET_FIRST ? b : e);
+            *b = *e;
+            state = GET_ADDRESS;
+        } else if (state == GET_ADDRESS) {
+            p = get_one_address(p, e);
             if (p == NULL)
                 break;
-            state |= GOT;
+            state = GET_SEPARATOR;
         } else {
+            if (state == GET_SEPARATOR && *e < 0)
+                *e = count_lines(text, dot);
             break;
         }
     }
+    dot = save_dot;
     return p;
 }
 
@@ -970,6 +1010,43 @@ static void setops(char *args, int flg_no)
 }
 # endif
 
+# if ENABLE_FEATURE_VI_COLON_EXPAND
+static char *expand_args(char *args)
+{
+    char *s, *t;
+    const char *replace;
+
+    args = mem_sandbox_strdup(args);
+    for (s = args; *s; s++) {
+        if (*s == '%') {
+            replace = current_filename;
+        } else if (*s == '#') {
+            replace = alt_filename;
+        } else {
+            if (*s == '\\' && s[1] != '\0') {
+                for (t = s++; *t; t++)
+                    *t = t[1];
+            }
+            continue;
+        }
+
+        if (replace == NULL) {
+            mem_sandbox_free(args);
+            status_line_bold("No previous filename");
+            return NULL;
+        }
+
+        *s = '\0';
+        t = xasprintf("%s%s%s", args, replace, s+1);
+        s = t + (s - args) + strlen(replace);
+        mem_sandbox_free(args);
+        args = t;
+    }
+    return args;
+}
+# else
+#  define expand_args(a) (a)
+# endif
 #endif /* FEATURE_VI_COLON */
 
 // buf must be no longer than MAX_INPUT_LEN!
@@ -986,7 +1063,7 @@ static void colon(char *buf)
     if (cnt == 0)
         return;
     if (strncmp(p, "quit", cnt) == 0
-     || strncmp(p, "q!", cnt) == 0
+     || strcmp(p, "q!") == 0
     ) {
         if (modified_count && p[1] != '!') {
             status_line_bold("No write since last change (:%s! overrides)", p);
@@ -996,8 +1073,8 @@ static void colon(char *buf)
         return;
     }
     if (strncmp(p, "write", cnt) == 0
-     || strncmp(p, "wq", cnt) == 0
-     || strncmp(p, "wn", cnt) == 0
+     || strcmp(p, "wq") == 0
+     || strcmp(p, "wn") == 0
      || (p[0] == 'x' && !p[1])
     ) {
         cnt = file_write(current_filename, text, end - 1);
@@ -1032,10 +1109,9 @@ static void colon(char *buf)
 #else
 
     char c, *buf1, *q, *r;
-    char *fn, cmd[MAX_INPUT_LEN], args[MAX_INPUT_LEN];
+    char *fn, cmd[MAX_INPUT_LEN], *cmdend, *args, *exp = NULL;
     int i, l, li, b, e;
     int useforce;
-    char *orig_buf;
 
     // :3154    // if (-e line 3154) goto it  else stay put
     // :4,33w! foo  // write a portion of buffer to file "foo"
@@ -1059,63 +1135,61 @@ static void colon(char *buf)
 
     li = i = 0;
     b = e = -1;
-    q = text;           // assume 1,$ for the range
-    r = end - 1;
     li = count_lines(text, end - 1);
     fn = current_filename;
 
     // look for optional address(es)  :.  :1  :1,9   :'q,'a   :%
-    orig_buf = buf;
+    buf1 = buf;
     buf = get_address(buf, &b, &e);
     if (buf == NULL) {
-        status_line_bold("Bad address: %s", orig_buf);
+        status_line_bold("Bad address: %s", buf1);
         goto ret;
     }
 
-# if ENABLE_FEATURE_VI_SEARCH || ENABLE_FEATURE_ALLOW_EXEC
-    // remember orig command line
-    orig_buf = buf;
-# endif
-
     // get the COMMAND into cmd[]
+    strcpy(cmd, buf);
     buf1 = cmd;
-    while (*buf != '\0') {
-        if (isspace(*buf))
-            break;
-        *buf1++ = *buf++;
+    while (!isspace(*buf1) && *buf1 != '\0') {
+        buf1++;
     }
-    *buf1 = '\0';
+    cmdend = buf1;
     // get any ARGuments
-    while (isblank(*buf))
-        buf++;
-    strcpy(args, buf);
+    while (isblank(*buf1))
+        buf1++;
+    args = buf1;
+    *cmdend = '\0';
     useforce = FALSE;
-    buf1 = last_char_is(cmd, '!');
-    if (buf1) {
+    if (cmdend > cmd && cmdend[-1] == '!') {
         useforce = TRUE;
-        *buf1 = '\0';   // get rid of !
+        cmdend[-1] = '\0';   // get rid of !
     }
-    if (b >= 0) {
-        // if there is only one addr, then the addr
-        // is the line number of the single line the
-        // user wants. So, reset the end
-        // pointer to point at end of the "b" line
-        q = find_line(b);   // what line is #b
-        r = end_line(q);
-        li = 1;
-    }
-    if (e >= 0) {
-        // we were given two addrs.  change the
-        // end pointer to the addr given by user.
-        r = find_line(e);   // what line is #e
-        r = end_line(r);
-        li = e - b + 1;
+    // assume the command will want a range, certain commands
+    // (read, substitute) need to adjust these assumptions
+    if (e < 0) {
+        q = text;           // no addr, use 1,$ for the range
+        r = end - 1;
+    } else {
+        // at least one addr was given, get its details
+        q = r = find_line(e);
+        if (b < 0) {
+            // if there is only one addr, then it's the line
+            // number of the single line the user wants.
+            // Reset the end pointer to the end of that line.
+            r = end_line(q);
+            li = 1;
+        } else {
+            // we were given two addrs.  change the
+            // start pointer to the addr given by user.
+            q = find_line(b);   // what line is #b
+            r = end_line(r);
+            li = e - b + 1;
+        }
     }
     // ------------ now look for the command ------------
     i = strlen(cmd);
     if (i == 0) {       // :123CR goto line #123
-        if (b >= 0) {
-            dot = find_line(b); // what line is #b
+        if (e >= 0) {
+            dot = find_line(e); // what line is #e
             dot_skip_over_ws();
         }
     }
@@ -1123,9 +1197,12 @@ static void colon(char *buf)
     else if (cmd[0] == '!') {   // run a cmd
         int retcode;
         // :!ls   run the <cmd>
+        exp = expand_args(buf + 1);
+        if (exp == NULL)
+            goto ret;
         go_bottom_and_clear_to_eol();
         cookmode();
-        retcode = system(orig_buf + 1); // run the cmd
+        retcode = system(exp); // run the cmd
         if (retcode)
             printf("\nshell returned %i\n\n", retcode);
         rawmode();
@@ -1133,12 +1210,12 @@ static void colon(char *buf)
     }
 #endif
     else if (cmd[0] == '=' && !cmd[1]) {    // where is the address
-        if (b < 0) {    // no addr given- use defaults
-            b = e = count_lines(text, dot);
+        if (e < 0) {    // no addr given- use defaults
+            e = count_lines(text, dot);
         }
-        status_line("%d", b);
+        status_line("%d", e);
     } else if (strncmp(cmd, "delete", i) == 0) {    // delete lines
-        if (b < 0) {    // no addr given- use defaults
+        if (e < 0) {    // no addr given- use defaults
             q = begin_line(dot);    // assume .,. for the range
             r = end_line(dot);
         }
@@ -1154,11 +1231,10 @@ static void colon(char *buf)
         }
         if (args[0]) {
             // the user supplied a file name
-            fn = args;
-        } else if (current_filename && current_filename[0]) {
-            // no user supplied name- use the current filename
-            // fn = current_filename;  was set by default
-        } else {
+            fn = exp = expand_args(args);
+            if (exp == NULL)
+                goto ret;
+        } else if (current_filename == NULL) {
             // no user file name, no current name- punt
             status_line_bold("No current filename");
             goto ret;
@@ -1181,7 +1257,7 @@ static void colon(char *buf)
         status_line("'%s'%s"
             IF_FEATURE_VI_READONLY("%s")
             " %uL, %uC",
-            current_filename,
+            fn,
             (size < 0 ? " [New file]" : ""),
             IF_FEATURE_VI_READONLY(
                 ((readonly_mode) ? " [Readonly]" : ""),
@@ -1189,14 +1265,16 @@ static void colon(char *buf)
             li, (int)(end - text)
         );
     } else if (strncmp(cmd, "file", i) == 0) {  // what File is this
-        if (b != -1 || e != -1) {
+        if (e >= 0) {
             status_line_bold("No address allowed on this command");
             goto ret;
         }
         if (args[0]) {
             // user wants a new filename
-            vi_free(current_filename);
-            current_filename = vi_strdup(args);
+            exp = expand_args(args);
+            if (exp == NULL)
+                goto ret;
+            update_filename(exp);
         } else {
             // user wants file status info
             last_status_cksum = 0;  // force status update
@@ -1209,7 +1287,7 @@ static void colon(char *buf)
         rawmode();
         Hit_Return();
     } else if (strncmp(cmd, "list", i) == 0) {  // literal print line
-        if (b < 0) {    // no addr given- use defaults
+        if (e < 0) {    // no addr given- use defaults
             q = begin_line(dot);    // assume .,. for the range
             r = end_line(dot);
         }
@@ -1276,19 +1354,32 @@ static void colon(char *buf)
         }
         editing = 0;
     } else if (strncmp(cmd, "read", i) == 0) {  // read file into text[]
-        int size;
+        int size, num;
 
-        fn = args;
-        if (!fn[0]) {
-            status_line_bold("No filename given");
+        if (args[0]) {
+            // the user supplied a file name
+            fn = exp = expand_args(args);
+            if (exp == NULL)
+                goto ret;
+            init_filename(fn);
+        } else if (current_filename == NULL) {
+            // no user file name, no current name- punt
+            status_line_bold("No current filename");
             goto ret;
         }
-        if (b < 0) {    // no addr given- use defaults
-            q = begin_line(dot);    // assume "dot"
+        if (e < 0) {    // no addr given- read after current line
+            q = begin_line(dot);
+        } else if (e == 0) {    // user said ":0r foo"
+            q = text;
+        } else {    // addr given- read after that line
+            q = next_line(find_line(e));
+            // read after last line
+            if (q == end-1)
+                ++q;
         }
-        // read after current line- unless user said ":0r foo"
-        if (b != 0)
-            q = next_line(q);
+        num = count_lines(text, q);
+        if (q == end)
+            num++;
         { // dance around potentially-reallocated text[]
             uintptr_t ofs = q - text;
             size = file_insert(fn, q, 0);
@@ -1305,11 +1396,7 @@ static void colon(char *buf)
             IF_FEATURE_VI_READONLY((readonly_mode ? " [Readonly]" : ""),)
             li, size
         );
-        if (size > 0) {
-            // if the insert is before "dot" then we need to update
-            if (q <= dot)
-                dot += size;
-        }
+        dot = find_line(num);
     } else if (strncmp(cmd, "rewind", i) == 0) {    // rewind cmd line args
         if (modified_count && !useforce) {
             status_line_bold("No write since last change (:%s! overrides)", cmd);
@@ -1372,8 +1459,8 @@ static void colon(char *buf)
         // F points to the "find" pattern
         // R points to the "replace" pattern
         // replace the cmd line delimiters "/" with NULs
-        c = orig_buf[1];    // what is the delimiter
-        F = orig_buf + 2;   // start of "find"
+        c = buf[1]; // what is the delimiter
+        F = buf + 2;    // start of "find"
         R = strchr(F, c);   // middle delimiter
         if (!R)
             goto colon_s_fail;
@@ -1386,13 +1473,13 @@ static void colon(char *buf)
         }
         len_R = strlen(R);
 
-        q = begin_line(q);
-        if (b < 0) {    // maybe :s/foo/bar/
+        if (e < 0) {    // no addr given
             q = begin_line(dot);      // start with cur line
-            b = count_lines(text, q); // cur line number
+            r = end_line(dot);
+            b = e = count_lines(text, q); // cur line number
+        } else if (b < 0) { // one addr given
+            b = e;
         }
-        if (e < 0)
-            e = b;      // maybe :.s/foo/bar/
 
         for (i = b; i <= e; i++) {  // so, :20,23 s \0 find \0 replace \0
             char *ls = q;       // orig line start
@@ -1442,8 +1529,8 @@ static void colon(char *buf)
     } else if (strncmp(cmd, "version", i) == 0) {  // show software version
         status_line(BB_VER " " BB_BT);
     } else if (strncmp(cmd, "write", i) == 0  // write text to file
-            || strncmp(cmd, "wq", i) == 0
-            || strncmp(cmd, "wn", i) == 0
+            || strcmp(cmd, "wq") == 0
+            || strcmp(cmd, "wn") == 0
             || (cmd[0] == 'x' && !cmd[1])
     ) {
         int size;
@@ -1453,15 +1540,19 @@ static void colon(char *buf)
         if (args[0]) {
             struct stat statbuf;
 
-            if (!useforce && (fn == NULL || strcmp(fn, args) != 0) &&
-                    stat(args, &statbuf) == 0) {
+            exp = expand_args(args);
+            if (exp == NULL)
+                goto ret;
+            if (!useforce && (fn == NULL || strcmp(fn, exp) != 0) &&
+                    stat(exp, &statbuf) == 0) {
                 status_line_bold("File exists (:w! overrides)");
                 goto ret;
             }
-            fn = args;
+            fn = exp;
+            init_filename(fn);
         }
 # if ENABLE_FEATURE_VI_READONLY
-        else if (readonly_mode && !useforce) {
+        else if (readonly_mode && !useforce && fn) {
             status_line_bold("'%s' is read only", fn);
             goto ret;
         }
@@ -1499,7 +1590,6 @@ static void colon(char *buf)
                 }
                 if (cmd[0] == 'x'
                  || cmd[1] == 'q' || cmd[1] == 'n'
-                 || cmd[1] == 'Q' || cmd[1] == 'N'
                 ) {
                     editing = 0;
                 }
@@ -1521,6 +1611,9 @@ static void colon(char *buf)
         not_implemented(cmd);
     }
  ret:
+# if ENABLE_FEATURE_VI_COLON_EXPAND
+    vi_free(exp);
+# endif
     dot = bound_dot(dot);   // make sure "dot" is valid
     return;
 # if ENABLE_FEATURE_VI_SEARCH
@@ -3013,7 +3106,7 @@ static char *get_input_line(const char *prompt)
     write1(prompt);      // write out the :, /, or ? prompt
 
     i = strlen(buf);
-    while (i < MAX_INPUT_LEN) {
+    while (i < MAX_INPUT_LEN - 1) {
         c = get_one_char();
         if (c == '\n' || c == '\r' || c == 27)
             break;      // this is end of input
@@ -3078,6 +3171,11 @@ static int file_insert(const char *fn, char *p, int initial)
         p = text_hole_delete(p + cnt, p + size - 1, NO_UNDO);
         status_line_bold("can't read '%s'", fn);
     }
+# if ENABLE_FEATURE_VI_UNDO
+    else {
+        undo_push_insert(p, size, ALLOW_UNDO);
+    }
+# endif
  fi:
     close(fd);
 
@@ -4209,7 +4307,7 @@ static void do_cmd(int c)
             break;
         }
         if (modified_count) {
-            if (ENABLE_FEATURE_VI_READONLY && readonly_mode) {
+            if (ENABLE_FEATURE_VI_READONLY && readonly_mode && current_filename) {
                 status_line_bold("'%s' is read only", current_filename);
                 break;
             }
@@ -4222,6 +4320,14 @@ static void do_cmd(int c)
             }
         } else {
             editing = 0;
+        }
+        // are there other files to edit?
+        j = cmdline_filecnt - optind - 1;
+        if (editing == 0 && j > 0) {
+            editing = 1;
+            modified_count = 0;
+            last_modified_count = -1;
+            status_line_bold("%u more file(s) to edit", j);
         }
         break;
     case '^':           // ^- move to first non-blank on line

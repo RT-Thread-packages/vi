@@ -22,7 +22,7 @@
 
 #include <mem_sandbox.h>
 
-#define BB_VER "latest: 2021-04-20"
+#define BB_VER "latest: 2021-04-28"
 #define BB_BT  "busybox vi"
 
 //config:config FEATURE_VI_MAX_LEN
@@ -71,6 +71,19 @@
 #else
 #define ENABLE_FEATURE_VI_COLON 0
 #define IF_FEATURE_VI_COLON(...)
+#endif
+
+//config:config FEATURE_VI_COLON_EXPAND
+//config:   bool "Expand \"%\" and \"#\" in colon commands"
+//config:   default y
+//config:   depends on FEATURE_VI_COLON
+//config:   help
+//config:   Expand the special characters \"%\" (current filename)
+//config:   and \"#\" (alternate filename) in colon commands.
+#ifdef VI_ENABLE_COLON_EXPAND
+#define ENABLE_FEATURE_VI_COLON_EXPAND 1
+#else
+#define ENABLE_FEATURE_VI_COLON_EXPAND 0
 #endif
 
 //config:config FEATURE_VI_SEARCH

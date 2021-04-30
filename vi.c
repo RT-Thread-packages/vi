@@ -614,12 +614,12 @@ MSH_CMD_EXPORT_ALIAS(vi_main, vi, a screen-oriented text editor);
 #if ENABLE_FEATURE_VI_COLON_EXPAND
 static void init_filename(char *fn)
 {
-    char *copy = mem_sandbox_strdup(fn);
+    char *copy = vi_strdup(fn);
 
     if (current_filename == NULL) {
         current_filename = copy;
     } else {
-        mem_sandbox_free(alt_filename);
+        vi_free(alt_filename);
         alt_filename = copy;
     }
 }
@@ -634,9 +634,9 @@ static void update_filename(char *fn)
         return;
 
     if (current_filename == NULL || strcmp(fn, current_filename) != 0) {
-        mem_sandbox_free(alt_filename);
+        vi_free(alt_filename);
         alt_filename = current_filename;
-        current_filename = mem_sandbox_strdup(fn);
+        current_filename = vi_strdup(fn);
     }
 #else
     if (fn != current_filename) {
@@ -1016,7 +1016,7 @@ static char *expand_args(char *args)
     char *s, *t;
     const char *replace;
 
-    args = mem_sandbox_strdup(args);
+    args = vi_strdup(args);
     for (s = args; *s; s++) {
         if (*s == '%') {
             replace = current_filename;
@@ -1031,7 +1031,7 @@ static char *expand_args(char *args)
         }
 
         if (replace == NULL) {
-            mem_sandbox_free(args);
+            vi_free(args);
             status_line_bold("No previous filename");
             return NULL;
         }
@@ -1039,7 +1039,7 @@ static char *expand_args(char *args)
         *s = '\0';
         t = xasprintf("%s%s%s", args, replace, s+1);
         s = t + (s - args) + strlen(replace);
-        mem_sandbox_free(args);
+        vi_free(args);
         args = t;
     }
     return args;

@@ -963,7 +963,7 @@ static char *get_address(char *p, int *b, int *e)
                 break;
             state = GET_SEPARATOR;
         } else {
-            if (state == GET_SEPARATOR && *e < 0)
+            if (state == GET_SEPARATOR && *b >= 0 && *e < 0)
                 *e = count_lines(text, dot);
             break;
         }
@@ -1588,9 +1588,20 @@ static void colon(char *buf)
                     modified_count = 0;
                     last_modified_count = -1;
                 }
-                if (cmd[0] == 'x'
-                 || cmd[1] == 'q' || cmd[1] == 'n'
-                ) {
+                if (cmd[1] == 'n') {
+                    editing = 0;
+                } else if (cmd[0] == 'x' || cmd[1] == 'q') {
+                    // are there other files to edit?
+                    int n = cmdline_filecnt - optind - 1;
+                    if (n > 0) {
+                        if (useforce) {
+                            // force end of argv list
+                            optind = cmdline_filecnt;
+                        } else {
+                            status_line_bold("%u more file(s) to edit", n);
+                            goto ret;
+                        }
+                    }
                     editing = 0;
                 }
             }
@@ -2247,11 +2258,10 @@ static int at_eof(const char *s)
 
 static int find_range(char **start, char **stop, int cmd)
 {
-    char *save_dot, *p, *q, *t;
+    char *p, *q, *t;
     int buftype = -1;
     int c;
 
-    save_dot = dot;
     p = q = dot;
 
 #if ENABLE_FEATURE_VI_YANKMARK
@@ -2340,14 +2350,8 @@ static int find_range(char **start, char **stop, int cmd)
         }
     }
 
-    if (buftype == WHOLE || cmd == '<' || cmd == '>') {
-        p = begin_line(p);
-        q = end_line(q);
-    }
-
     *start = p;
     *stop = q;
-    dot = save_dot;
     return buftype;
 }
 
@@ -3103,7 +3107,7 @@ static char *get_input_line(const char *prompt)
     strcpy(buf, prompt);
     last_status_cksum = 0;  // force status update
     go_bottom_and_clear_to_eol();
-    write1(prompt);      // write out the :, /, or ? prompt
+    write1(buf); // write out the :, /, or ? prompt
 
     i = strlen(buf);
     while (i < MAX_INPUT_LEN - 1) {
@@ -3116,8 +3120,8 @@ static char *get_input_line(const char *prompt)
             #endif
                 c == 8 || c == 127) {
             // user wants to erase prev char
-            buf[--i] = '\0';
             write1("\b \b"); // erase char on screen
+            buf[--i] = '\0';
             if (i <= 0) // user backs up before b-o-l, exit
                 break;
         } else if (c > 0 && c < 256) { // exclude Unicode
@@ -4116,7 +4120,7 @@ static void do_cmd(int c)
         if (find_range(&p, &q, c) == -1)
             goto dc6;
         i = count_lines(p, q);  // # of lines we are shifting
-        for ( ; i > 0; i--, p = next_line(p)) {
+        for (p = begin_line(p); i > 0; i--, p = next_line(p)) {
             if (c == '<') {
                 // shift left- remove tab or tabstop spaces
                 if (*p == '\t') {
@@ -4368,12 +4372,16 @@ static void do_cmd(int c)
 # endif
         if (c == 'y' || c == 'Y')
             yf = YANKONLY;
-        save_dot = dot;
 #endif
         // determine range, and whether it spans lines
         buftype = find_range(&p, &q, c);
         if (buftype == -1)  // invalid range
             goto dc6;
+        if (buftype == WHOLE) {
+            save_dot = p;   // final cursor position is start of range
+            p = begin_line(p);
+            q = end_line(q);
+        }
         dot = yank_delete(p, q, buftype, yf, ALLOW_UNDO);   // delete word
         if (buftype == WHOLE) {
             if (c == 'c') {
@@ -4382,15 +4390,9 @@ static void do_cmd(int c)
                 if (dot != (end-1)) {
                     dot_prev();
                 }
-            } else if (c == 'd') {
-                dot_begin();
-                dot_skip_over_ws();
-            }
-#if ENABLE_FEATURE_VI_YANKMARK
-            else /* (c == 'y' || c == 'Y') */ {
+            } else {
                 dot = save_dot;
             }
-#endif
         }
         // if CHANGING, not deleting, start inserting after the delete
         if (c == 'c') {

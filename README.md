@@ -24,5 +24,5 @@ vi follows the LGPLv2.1 license, see the `LICENSE` file for details.
 
 ## 3. Contact information
 
-- Maintenance: [Meco Man](https://github.com/mysterywolf)
-- Homepage: <https://github.com/RT-Thread-packages/vi>
+Maintenance: [Meco Man](https://github.com/mysterywolf)
+Homepage: <https://github.com/RT-Thread-packages/vi>

@@ -1,4 +1,4 @@
-# vi
+# vi for RT-Thread
 
 [中文页](README_ZH.md) | English
 

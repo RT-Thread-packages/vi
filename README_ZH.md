@@ -1,4 +1,4 @@
-# vi #
+# vi for RT-Thread
 
 中文页 | [English](README.md)
 
@@ -28,5 +28,5 @@ vi 遵循 LGPLv2.1 许可，详见 `LICENSE` 文件。
 
 ## 3. 联系方式 ##
 
-- 维护：[Meco Man](https://github.com/mysterywolf)
-- 主页：<https://github.com/RT-Thread-packages/vi>
+维护：[Meco Man](https://github.com/mysterywolf)
+主页：<https://github.com/RT-Thread-packages/vi>

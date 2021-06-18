@@ -134,7 +134,6 @@ struct globals {
 #define err_method (vi_setops & VI_ERR_METHOD) // indicate error with beep or flash
 #define ignorecase (vi_setops & VI_IGNORECASE)
 #define showmatch  (vi_setops & VI_SHOWMATCH )
-#define openabove  (vi_setops & VI_TABSTOP   )
 // order of constants and strings must match
 #define OPTS_STR \
         "ai\0""autoindent\0" \
@@ -143,15 +142,10 @@ struct globals {
         "ic\0""ignorecase\0" \
         "sm\0""showmatch\0" \
         "ts\0""tabstop\0"
-#define set_openabove() (vi_setops |= VI_TABSTOP)
-#define clear_openabove() (vi_setops &= ~VI_TABSTOP)
 #else
 #define autoindent (0)
 #define expandtab  (0)
 #define err_method (0)
-#define openabove  (0)
-#define set_openabove() ((void)0)
-#define clear_openabove() ((void)0)
 #endif
 
 #if ENABLE_FEATURE_VI_READONLY
@@ -207,6 +201,10 @@ struct globals {
 #if ENABLE_FEATURE_VI_SEARCH
     char *last_search_pattern; // last pattern from a '/' or '?' search
 #endif
+#if ENABLE_FEATURE_VI_SETOPTS
+    int indentcol;      // column of recently autoindent, 0 or -1
+#endif
+    smallint cmd_error;
 
     /* former statics */
 #if ENABLE_FEATURE_VI_YANKMARK
@@ -331,6 +329,8 @@ struct globals {
 #define ioq_start               (G.ioq_start          )
 #define dotcnt                  (G.dotcnt             )
 #define last_search_pattern     (G.last_search_pattern)
+#define indentcol               (G.indentcol          )
+#define cmd_error               (G.cmd_error          )
 
 #define edit_file__cur_line     (G.edit_file__cur_line)
 #define refresh__old_offset     (G.refresh__old_offset)
@@ -367,6 +367,7 @@ struct globals {
     last_modified_count = -1; \
     /* "" but has space for 2 chars: */ \
     IF_FEATURE_VI_SEARCH(last_search_pattern = vi_zalloc(2);) \
+    tabstop = 8; \
 } while (0)
 
 static void edit_file(char *);  // edit one file
@@ -547,7 +548,11 @@ static int vi_main(int argc, char **argv)
     }
 #endif
     optparse_init(&options, argv); // RT-Thread team added
-    while ((c = optparse(&options, "hCRH" IF_FEATURE_VI_COLON("c:"))) != -1) {
+    while ((c = optparse(&options,
+#if ENABLE_FEATURE_VI_CRASHME
+            "C"
+#endif
+            "RHh" IF_FEATURE_VI_COLON("c:"))) != -1) {
         switch (c) {
 #if ENABLE_FEATURE_VI_CRASHME
         case 'C':
@@ -749,7 +754,6 @@ static void edit_file(char *fn)
 
     cmd_mode = 0;       // 0=command  1=insert  2='R'eplace
     cmdcnt = 0;
-    tabstop = 4;
     offset = 0;         // no horizontal offset
     c = '\0';
 #if ENABLE_FEATURE_VI_DOT_CMD
@@ -991,7 +995,6 @@ static void setops(char *args, int flg_no)
     index = 1 << (index >> 1); // convert to VI_bit
 
     if (index & VI_TABSTOP) {
-        // don't set this bit in vi_setops, it's reused as 'openabove'
         int t;
         if (!eq || flg_no) // no "=NNN" or it is "notabstop"?
             goto bad;
@@ -1367,12 +1370,10 @@ static void colon(char *buf)
             status_line_bold("No current filename");
             goto ret;
         }
-        if (e < 0) {    // no addr given- read after current line
-            q = begin_line(dot);
-        } else if (e == 0) {    // user said ":0r foo"
+        if (e == 0) {   // user said ":0r foo"
             q = text;
-        } else {    // addr given- read after that line
-            q = next_line(find_line(e));
+        } else {    // read after given line or current line if none given
+            q = next_line(e > 0 ? find_line(e) : dot);
             // read after last line
             if (q == end-1)
                 ++q;
@@ -1592,11 +1593,11 @@ static void colon(char *buf)
                     editing = 0;
                 } else if (cmd[0] == 'x' || cmd[1] == 'q') {
                     // are there other files to edit?
-                    int n = cmdline_filecnt - optind - 1;
+                    int n = cmdline_filecnt - options.optind - 1;
                     if (n > 0) {
                         if (useforce) {
                             // force end of argv list
-                            optind = cmdline_filecnt;
+                            options.optind = cmdline_filecnt;
                         } else {
                             status_line_bold("%u more file(s) to edit", n);
                             goto ret;
@@ -1653,7 +1654,7 @@ static int next_tabstop(int col)
 
 static int prev_tabstop(int col)
 {
-    return col - ((col % tabstop) ?: tabstop);
+    return col - ((col % tabstop) ? (col % tabstop) : tabstop);
 }
 
 static int next_column(char c, int co)
@@ -2131,12 +2132,27 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
 
 #endif /* FEATURE_VI_SEARCH */
 
+// find number of characters in indent, p must be at beginning of line
+static size_t indent_len(char *p)
+{
+    char *r = p;
+
+    while (r < (end - 1) && isblank(*r))
+        r++;
+    return r - p;
+}
+
+
+#if !ENABLE_FEATURE_VI_UNDO
+#define char_insert(a,b,c) char_insert(a,b)
+#endif
 static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
 {
 #if ENABLE_FEATURE_VI_SETOPTS
-    char *q;
     size_t len;
+    int col, ntab, nspc;
 #endif
+    char *bol = begin_line(p);
 
     if (c == 22) {      // Is this an ctrl-V?
         p += stupid_insert(p, '^'); // use ^ to indicate literal next
@@ -2158,25 +2174,36 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
         if ((p[-1] != '\n') && (dot > text)) {
             p--;
         }
-    } else if (c == 4) {    // ctrl-D reduces indentation
-        int prev;
-        char *r, *bol;
-        bol = begin_line(p);
-        for (r = bol; r < end_line(p); ++r) {
-            if (!isblank(*r))
-                break;
+#if ENABLE_FEATURE_VI_SETOPTS
+        if (autoindent) {
+            len = indent_len(bol);
+            if (len && get_column(bol + len) == indentcol && bol[len] == '\n') {
+                // remove autoindent from otherwise empty line
+                text_hole_delete(bol, bol + len - 1, undo);
+                p = bol;
+            }
         }
-
-        prev = prev_tabstop(get_column(r));
+#endif
+    } else if (c == 4) {    // ctrl-D reduces indentation
+        char *r = bol + indent_len(bol);
+        int prev = prev_tabstop(get_column(r));
         while (r > bol && get_column(r) > prev) {
             if (p > bol)
                 p--;
             r--;
             r = text_hole_delete(r, r, ALLOW_UNDO_QUEUED);
         }
+
+#if ENABLE_FEATURE_VI_SETOPTS
+        if (autoindent && indentcol && r == end_line(p)) {
+            // record changed size of autoindent
+            indentcol = get_column(p);
+            return p;
+        }
+#endif
 #if ENABLE_FEATURE_VI_SETOPTS
     } else if (c == '\t' && expandtab) {    // expand tab
-        int col = get_column(p);
+        col = get_column(p);
         col = next_tabstop(col) - col + 1;
         while (col--) {
 # if ENABLE_FEATURE_VI_UNDO
@@ -2215,27 +2242,46 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
             showmatching(p - 1);
         }
         if (autoindent && c == '\n') {  // auto indent the new line
-            // use current/previous line as template
-            q = openabove ? p : prev_line(p);
-            len = strspn(q, " \t"); // space or tab
-            if (openabove) {
-                p--;        // this replaces dot_prev() in do_cmd()
-                q += len;   // template will be shifted by text_hole_make()
+            // use indent of current/previous line
+            bol = indentcol < 0 ? p : prev_line(p);
+            len = indent_len(bol);
+            col = get_column(bol + len);
+
+            if (len && col == indentcol) {
+                // previous line was empty except for autoindent
+                // move the indent to the current line
+                memmove(bol + 1, bol, len);
+                *bol = '\n';
+                return p;
             }
+
+            if (indentcol < 0)
+                p--;    // open above, indent before newly inserted NL
+
             if (len) {
-                uintptr_t bias;
-                bias = text_hole_make(p, len);
-                p += bias;
-                q += bias;
+                indentcol = col;
+                if (expandtab) {
+                    ntab = 0;
+                    nspc = col;
+                } else {
+                    ntab = col / tabstop;
+                    nspc = col % tabstop;
+                }
+                p += text_hole_make(p, ntab + nspc);
 #if ENABLE_FEATURE_VI_UNDO
-                undo_push_insert(p, len, undo);
+                undo_push_insert(p, ntab + nspc, undo);
 #endif
-                rt_memcpy(p, q, len);
-                p += len;
+                memset(p, '\t', ntab);
+                p += ntab;
+                memset(p, ' ', nspc);
+                return p + nspc;
             }
         }
 #endif
     }
+#if ENABLE_FEATURE_VI_SETOPTS
+    indentcol = 0;
+#endif
     return p;
 }
 
@@ -2280,14 +2326,19 @@ static int find_range(char **start, char **stop, int cmd)
 #endif
         // these cmds operate on whole lines
         buftype = WHOLE;
-        if (--cmdcnt > 0)
+        if (--cmdcnt > 0) {
             do_cmd('j');
+            if (cmd_error)
+                buftype = -1;
+        }
     } else if (strchr("^%$0bBeEfFtThnN/?|{}\b\177", c)) {
         // Most operate on char positions within a line.  Of those that
         // don't '%' needs no special treatment, search commands are
         // marked as MULTI and  "{}" are handled below.
         buftype = strchr("nN/?", c) ? MULTI : PARTIAL;
         do_cmd(c);      // execute movement cmd
+        if (cmd_error)
+            buftype = -1;
         if (p == dot)   // no movement is an error
             buftype = -1;
     } else if (strchr("wW", c)) {
@@ -2829,7 +2880,7 @@ static void show_help(void)
 static void start_new_cmd_q(char c)
 {
     // get buffer for new cmd
-    dotcnt = cmdcnt ?: 1;
+    dotcnt = cmdcnt ? cmdcnt : 1;
     last_modifying_cmd[0] = c;
     lmc_len = 1;
     adding2q = 1;
@@ -3085,7 +3136,7 @@ static int get_motion_char(void)
             // get any non-zero motion count
             for (cnt = 0; isdigit(c); c = get_one_char())
                 cnt = cnt * 10 + (c - '0');
-            cmdcnt = (cmdcnt ?: 1) * cnt;
+            cmdcnt = (cmdcnt ? cmdcnt : 1) * cnt;
         } else {
             // ensure standalone '0' works
             cmdcnt = 0;
@@ -3291,6 +3342,7 @@ static void indicate_error(void)
     if (crashme > 0)
         return;
 #endif
+    cmd_error = TRUE;
     if (!err_method) {
         write1(ESC_BELL);
     } else {
@@ -3697,6 +3749,7 @@ static void do_cmd(int c)
 //  p = q = save_dot = buf; // quiet the compiler
     rt_memset(buf, '\0', sizeof(buf));
     keep_index = FALSE;
+    cmd_error = FALSE;
 
     show_status_line();
 
@@ -3817,23 +3870,29 @@ static void do_cmd(int c)
     case 10:            // Newline ^J
     case 'j':           // j- goto next line, same col
     case KEYCODE_DOWN:  // cursor key Down
+    case 13:            // Carriage Return ^M
+    case '+':           // +- goto next line
+        q = dot;
         do {
-            dot_next();     // go to next B-o-l
+            p = next_line(q);
+            if (p == end_line(q)) {
+                indicate_error();
+                goto dc1;
+            }
+            q = p;
         } while (--cmdcnt > 0);
-        // try to stay in saved column
-        dot = cindex == C_END ? end_line(dot) : move_to_col(dot, cindex);
-        keep_index = TRUE;
+        dot = q;
+        if (c == 13 || c == '+') {
+            dot_skip_over_ws();
+        } else {
+            // try to stay in saved column
+            dot = cindex == C_END ? end_line(dot) : move_to_col(dot, cindex);
+            keep_index = TRUE;
+        }
         break;
     case 12:            // ctrl-L  force redraw whole screen
     case 18:            // ctrl-R  force redraw
         redraw(TRUE);   // this will redraw the entire display
-        break;
-    case 13:            // Carriage Return ^M
-    case '+':           // +- goto next line
-        do {
-            dot_next();
-        } while (--cmdcnt > 0);
-        dot_skip_over_ws();
         break;
     case 21:            // ctrl-U  scroll up half screen
         dot_scroll((rows - 2) / 2, -1);
@@ -3875,6 +3934,8 @@ static void do_cmd(int c)
                 dot = q;
                 dot_begin();    // go to B-o-l
                 dot_skip_over_ws();
+            } else {
+                indicate_error();
             }
         } else if (c1 == '\'') {    // goto previous context
             dot = swap_context(dot);    // swap current and previous context
@@ -3908,7 +3969,7 @@ static void do_cmd(int c)
             break;
         }
         cnt = 0;
-        i = cmdcnt ?: 1;
+        i = cmdcnt ? cmdcnt : 1;
         // are we putting whole lines or strings
         if (regtype[YDreg] == WHOLE) {
             if (c == 'P') {
@@ -3937,6 +3998,7 @@ static void do_cmd(int c)
 # endif
         } while (--cmdcnt > 0);
         dot += cnt;
+        dot_skip_over_ws();
 # if ENABLE_FEATURE_VI_YANKMARK && ENABLE_FEATURE_VI_VERBOSE_STATUS
         yank_status("Put", p, i);
 # endif
@@ -3999,12 +4061,6 @@ static void do_cmd(int c)
     case ',':           // ,- repeat latest search in opposite direction
         dot_to_char(c != ',' ? last_search_cmd : last_search_cmd ^ 0x20);
         break;
-    case '-':           // -- goto prev line
-        do {
-            dot_prev();
-        } while (--cmdcnt > 0);
-        dot_skip_over_ws();
-        break;
 #if ENABLE_FEATURE_VI_DOT_CMD
     case '.':           // .- repeat the last modifying command
         // Stuff the last_modifying_cmd back into stdin
@@ -4021,7 +4077,6 @@ static void do_cmd(int c)
     case 'N':           // N- backward search for last pattern
         dir = last_search_pattern[0] == '/' ? BACK : FORWARD;
         goto dc4;       // now search for pattern
-        break;
     case '?':           // ?- backward search for a pattern
     case '/':           // /- forward search for a pattern
         buf[0] = c;
@@ -4209,9 +4264,10 @@ static void do_cmd(int c)
         if (cmdcnt > (rows - 1)) {
             cmdcnt = (rows - 1);
         }
-        if (--cmdcnt > 0) {
-            do_cmd('+');
+        while (--cmdcnt > 0) {
+            dot_next();
         }
+        dot_begin();
         dot_skip_over_ws();
         break;
     case 'I':           // I- insert before first non-blank
@@ -4248,8 +4304,8 @@ static void do_cmd(int c)
         if (cmdcnt > (rows - 1)) {
             cmdcnt = (rows - 1);
         }
-        if (--cmdcnt > 0) {
-            do_cmd('-');
+        while (--cmdcnt > 0) {
+            dot_prev();
         }
         dot_begin();
         dot_skip_over_ws();
@@ -4262,17 +4318,18 @@ static void do_cmd(int c)
         break;
     case 'O':           // O- open an empty line above
         dot_begin();
-        set_openabove();
+#if ENABLE_FEATURE_VI_SETOPTS
+        indentcol = -1;
+#endif
         goto dc3;
     case 'o':           // o- open an empty line below
         dot_end();
  dc3:
         dot = char_insert(dot, '\n', ALLOW_UNDO);
         if (c == 'O' && !autoindent) {
-            // done in char_insert() for openabove+autoindent
+            // done in char_insert() for 'O'+autoindent
             dot_prev();
         }
-        clear_openabove();
         goto dc_i;
     case 'R':           // R- continuous Replace char
  dc5:
@@ -4326,7 +4383,7 @@ static void do_cmd(int c)
             editing = 0;
         }
         // are there other files to edit?
-        j = cmdline_filecnt - optind - 1;
+        j = cmdline_filecnt - options.optind - 1;
         if (editing == 0 && j > 0) {
             editing = 1;
             modified_count = 0;
@@ -4390,6 +4447,9 @@ static void do_cmd(int c)
                 if (dot != (end-1)) {
                     dot_prev();
                 }
+            } else if (c == 'd') {
+                dot_begin();
+                dot_skip_over_ws();
             } else {
                 dot = save_dot;
             }
@@ -4409,17 +4469,29 @@ static void do_cmd(int c)
     }
     case 'k':           // k- goto prev line, same col
     case KEYCODE_UP:        // cursor key Up
+    case '-':           // -- goto prev line
+        q = dot;
         do {
-            dot_prev();
+            p = prev_line(q);
+            if (p == begin_line(q)) {
+                indicate_error();
+                goto dc1;
+            }
+            q = p;
         } while (--cmdcnt > 0);
-        // try to stay in saved column
-        dot = cindex == C_END ? end_line(dot) : move_to_col(dot, cindex);
-        keep_index = TRUE;
+        dot = q;
+        if (c == '-') {
+            dot_skip_over_ws();
+        } else {
+            // try to stay in saved column
+            dot = cindex == C_END ? end_line(dot) : move_to_col(dot, cindex);
+            keep_index = TRUE;
+        }
         break;
     case 'r':           // r- replace the current char with user input
         c1 = get_one_char();    // get the replacement char
         if (c1 != 27) {
-            if (end_line(dot) - dot < (cmdcnt ?: 1)) {
+            if (end_line(dot) - dot < (cmdcnt ? cmdcnt : 1)) {
                 indicate_error();
                 goto dc6;
             }

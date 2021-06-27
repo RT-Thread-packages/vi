@@ -22,8 +22,8 @@
 
 #include <mem_sandbox.h>
 
-#define BB_VER "latest: 2021-04-28"
-#define BB_BT  "busybox vi"
+#define BB_VER "latest: 2021-06-17"
+#define BB_BT  "Busybox vi for RT-Thread"
 
 //config:config FEATURE_VI_MAX_LEN
 //config:   int "Maximum screen width in vi"

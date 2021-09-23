@@ -146,6 +146,7 @@ struct globals {
 #define autoindent (0)
 #define expandtab  (0)
 #define err_method (0)
+#define ignorecase (0)
 #endif
 
 #if ENABLE_FEATURE_VI_READONLY
@@ -445,8 +446,7 @@ static void Hit_Return(void);
 static char *char_search(char *, const char *, int); // search for pattern starting at p
 #endif
 #if ENABLE_FEATURE_VI_COLON
-static char *get_one_address(char *, int *);    // get colon addr, if present
-static char *get_address(char *, int *, int *); // get two colon addrs, if present
+static char *get_address(char *p, int *b, int *e, unsigned int *got); // get colon addr, if present
 #endif
 static void colon(char *);  // execute the "colon" mode cmds
 #if ENABLE_FEATURE_VI_USE_SIGNALS
@@ -846,26 +846,38 @@ static void edit_file(char *fn)
 
 //----- The Colon commands -------------------------------------
 #if ENABLE_FEATURE_VI_COLON
-static char *get_one_address(char *p, int *result)  // get colon addr, if present
+// Evaluate colon address expression.  Returns a pointer to the
+// next character or NULL on error.  If 'result' contains a valid
+// address 'valid' is TRUE.
+static char *get_one_address(char *p, int *result, int *valid)
 {
-    int st, num, sign, addr, new_addr;
+    int num, sign, addr, got_addr;
 # if ENABLE_FEATURE_VI_YANKMARK || ENABLE_FEATURE_VI_SEARCH
     char *q, c;
 # endif
     IF_FEATURE_VI_SEARCH(int dir;)
 
-    addr = -1;          // assume no addr
+    got_addr = FALSE;
+    addr = count_lines(text, dot);  // default to current line
     sign = 0;
     for (;;) {
-        new_addr = -1;
         if (isblank(*p)) {
+            if (got_addr) {
+                addr += sign;
+                sign = 0;
+            }
             p++;
-        } else if (*p == '.') { // the current line
+        } else if (!got_addr && *p == '.') {    // the current line
             p++;
-            new_addr = count_lines(text, dot);
+            //addr = count_lines(text, dot);
+            got_addr = TRUE;
+        } else if (!got_addr && *p == '$') {    // the last line in file
+            p++;
+            addr = count_lines(text, end - 1);
+            got_addr = TRUE;
         }
 # if ENABLE_FEATURE_VI_YANKMARK
-        else if (*p == '\'') {  // is this a mark addr
+        else if (!got_addr && *p == '\'') { // is this a mark addr
             p++;
             c = tolower(*p);
             p++;
@@ -875,13 +887,16 @@ static char *get_one_address(char *p, int *result)  // get colon addr, if presen
                 c = c - 'a';
                 q = mark[(unsigned char) c];
             }
-            if (q == NULL)  // is mark valid
+            if (q == NULL) {    // is mark valid
+                status_line_bold("Mark not set");
                 return NULL;
-            new_addr = count_lines(text, q);
+            }
+            addr = count_lines(text, q);
+            got_addr = TRUE;
         }
 # endif
 # if ENABLE_FEATURE_VI_SEARCH
-        else if (*p == '/' || *p == '?') {  // a search pattern
+        else if (!got_addr && (*p == '/' || *p == '?')) {   // a search pattern
             c = *p;
             q = strchrnul(p + 1, c);
             if (p + 1 != q) {
@@ -900,39 +915,45 @@ static char *get_one_address(char *p, int *result)  // get colon addr, if presen
                 dir = ((unsigned)BACK << 1) | FULL;
             }
             q = char_search(q, last_search_pattern + 1, dir);
-            if (q == NULL)
-                return NULL;
-            new_addr = count_lines(text, q);
+            if (q == NULL) {
+                // no match, continue from other end of file
+                q = char_search(dir > 0 ? text : end - 1,
+                                last_search_pattern + 1, dir);
+                if (q == NULL) {
+                    status_line_bold("Pattern not found");
+                    return NULL;
+                }
+            }
+            addr = count_lines(text, q);
+            got_addr = TRUE;
         }
 # endif
-        else if (*p == '$') {   // the last line in file
-            p++;
-            new_addr = count_lines(text, end - 1);
-        } else if (isdigit(*p)) {
-            sscanf(p, "%d%n", &num, &st);
-            p += st;
-            if (addr < 0) { // specific line number
+        else if (isdigit(*p)) {
+            num = 0;
+            while (isdigit(*p))
+                num = num * 10 + *p++ -'0';
+            if (!got_addr) {    // specific line number
                 addr = num;
+                got_addr = TRUE;
             } else {    // offset from current addr
                 addr += sign >= 0 ? num : -num;
             }
             sign = 0;
         } else if (*p == '-' || *p == '+') {
-            sign = *p++ == '-' ? -1 : 1;
-            if (addr < 0) { // default address is dot
-                addr = count_lines(text, dot);
+            if (!got_addr) {    // default address is dot
+                //addr = count_lines(text, dot);
+                got_addr = TRUE;
+            } else {
+                addr += sign;
             }
+            sign = *p++ == '-' ? -1 : 1;
         } else {
             addr += sign;   // consume unused trailing sign
             break;
         }
-        if (new_addr >= 0) {
-            if (addr >= 0)  // only one new address per expression
-                return NULL;
-            addr = new_addr;
-        }
     }
     *result = addr;
+    *valid = got_addr;
     return p;
 }
 
@@ -941,34 +962,40 @@ static char *get_one_address(char *p, int *result)  // get colon addr, if presen
 
 // Read line addresses for a colon command.  The user can enter as
 // many as they like but only the last two will be used.
-static char *get_address(char *p, int *b, int *e)
+static char *get_address(char *p, int *b, int *e, unsigned int *got)
 {
     int state = GET_ADDRESS;
+    int valid;
+    int addr;
     char *save_dot = dot;
 
     //----- get the address' i.e., 1,3   'a,'b  -----
     for (;;) {
         if (isblank(*p)) {
             p++;
-        } else if (*p == '%' && state == GET_ADDRESS) { // alias for 1,$
+        } else if (state == GET_ADDRESS && *p == '%') { // alias for 1,$
             p++;
             *b = 1;
             *e = count_lines(text, end-1);
+            *got = 3;
+            state = GET_SEPARATOR;
+        } else if (state == GET_ADDRESS) {
+            valid = FALSE;
+            p = get_one_address(p, &addr, &valid);
+            // Quit on error or if the address is invalid and isn't of
+            // the form ',$' or '1,' (in which case it defaults to dot).
+            if (p == NULL || !(valid || *p == ',' || *p == ';' || *got & 1))
+                break;
+            *b = *e;
+            *e = addr;
+            *got = (*got << 1) | 1;
             state = GET_SEPARATOR;
         } else if (state == GET_SEPARATOR && (*p == ',' || *p == ';')) {
             if (*p == ';')
                 dot = find_line(*e);
             p++;
-            *b = *e;
             state = GET_ADDRESS;
-        } else if (state == GET_ADDRESS) {
-            p = get_one_address(p, e);
-            if (p == NULL)
-                break;
-            state = GET_SEPARATOR;
         } else {
-            if (state == GET_SEPARATOR && *b >= 0 && *e < 0)
-                *e = count_lines(text, dot);
             break;
         }
     }
@@ -1052,6 +1079,75 @@ static char *expand_args(char *args)
 # endif
 #endif /* FEATURE_VI_COLON */
 
+#if ENABLE_FEATURE_VI_REGEX_SEARCH
+# define MAX_SUBPATTERN 10  // subpatterns \0 .. \9
+
+// Like strchr() but skipping backslash-escaped characters
+static char *strchr_backslash(const char *s, int c)
+{
+    while (*s) {
+        if (*s == c)
+            return (char *)s;
+        if (*s == '\\')
+            if (*++s == '\0')
+                break;
+        s++;
+    }
+    return NULL;
+}
+
+// If the return value is not NULL the caller should free R
+static char *regex_search(char *q, regex_t *preg, const char *Rorig,
+                size_t *len_F, size_t *len_R, char **R)
+{
+    regmatch_t regmatch[MAX_SUBPATTERN], *cur_match;
+    char *found = NULL;
+    const char *t;
+    char *r;
+
+    regmatch[0].rm_so = 0;
+    regmatch[0].rm_eo = end_line(q) - q;
+    if (regexec(preg, q, MAX_SUBPATTERN, regmatch, REG_STARTEND) != 0)
+        return found;
+
+    found = q + regmatch[0].rm_so;
+    *len_F = regmatch[0].rm_eo - regmatch[0].rm_so;
+    *R = NULL;
+
+ fill_result:
+    // first pass calculates len_R, second fills R
+    *len_R = 0;
+    for (t = Rorig, r = *R; *t; t++) {
+        size_t len = 1; // default is to copy one char from replace pattern
+        const char *from = t;
+        if (*t == '\\') {
+            from = ++t; // skip backslash
+            if (*t >= '0' && *t < '0' + MAX_SUBPATTERN) {
+                cur_match = regmatch + (*t - '0');
+                if (cur_match->rm_so >= 0) {
+                    len = cur_match->rm_eo - cur_match->rm_so;
+                    from = q + cur_match->rm_so;
+                }
+            }
+        }
+        *len_R += len;
+        if (*R) {
+            memcpy(r, from, len);
+            r += len;
+            /* *r = '\0'; - xzalloc did it */
+        }
+    }
+    if (*R == NULL) {
+        *R = vi_zalloc(*len_R + 1);
+        goto fill_result;
+    }
+
+    return found;
+}
+#else /* !ENABLE_FEATURE_VI_REGEX_SEARCH */
+# define strchr_backslash(s, c) strchr(s, c)
+#endif /* ENABLE_FEATURE_VI_REGEX_SEARCH */
+
 // buf must be no longer than MAX_INPUT_LEN!
 static void colon(char *buf)
 {
@@ -1111,9 +1207,14 @@ static void colon(char *buf)
     not_implemented(p);
 #else
 
+// check how many addresses we got
+# define GOT_ADDRESS (got & 1)
+# define GOT_RANGE ((got & 3) == 3)
+
     char c, *buf1, *q, *r;
     char *fn, cmd[MAX_INPUT_LEN], *cmdend, *args, *exp = NULL;
     int i, l, li, b, e;
+    unsigned int got;
     int useforce;
 
     // :3154    // if (-e line 3154) goto it  else stay put
@@ -1131,21 +1232,22 @@ static void colon(char *buf)
     // :!<cmd>  // run <cmd> then return
     //
 
-    if (!buf[0])
-        goto ret;
-    if (*buf == ':')
-        buf++;          // move past the ':'
+    while (*buf == ':')
+        buf++;          // move past leading colons
+    while (isblank(*buf))
+        buf++;          // move past leading blanks
+    if (!buf[0] || buf[0] == '"')
+        goto ret;       // ignore empty lines or those starting with '"'
 
     li = i = 0;
     b = e = -1;
+    got = 0;
     li = count_lines(text, end - 1);
     fn = current_filename;
 
     // look for optional address(es)  :.  :1  :1,9   :'q,'a   :%
-    buf1 = buf;
-    buf = get_address(buf, &b, &e);
+    buf = get_address(buf, &b, &e, &got);
     if (buf == NULL) {
-        status_line_bold("Bad address: %s", buf1);
         goto ret;
     }
 
@@ -1168,13 +1270,17 @@ static void colon(char *buf)
     }
     // assume the command will want a range, certain commands
     // (read, substitute) need to adjust these assumptions
-    if (e < 0) {
+    if (!GOT_ADDRESS) {
         q = text;           // no addr, use 1,$ for the range
         r = end - 1;
     } else {
         // at least one addr was given, get its details
+        if (e < 0 || e > li) {
+            status_line_bold("Invalid range");
+            goto ret;
+        }
         q = r = find_line(e);
-        if (b < 0) {
+        if (!GOT_RANGE) {
             // if there is only one addr, then it's the line
             // number of the single line the user wants.
             // Reset the end pointer to the end of that line.
@@ -1183,6 +1289,10 @@ static void colon(char *buf)
         } else {
             // we were given two addrs.  change the
             // start pointer to the addr given by user.
+            if (b < 0 || b > li || b > e) {
+                status_line_bold("Invalid range");
+                goto ret;
+            }
             q = find_line(b);   // what line is #b
             r = end_line(r);
             li = e - b + 1;
@@ -1213,12 +1323,12 @@ static void colon(char *buf)
     }
 #endif
     else if (cmd[0] == '=' && !cmd[1]) {    // where is the address
-        if (e < 0) {    // no addr given- use defaults
+        if (!GOT_ADDRESS) { // no addr given- use defaults
             e = count_lines(text, dot);
         }
         status_line("%d", e);
     } else if (strncmp(cmd, "delete", i) == 0) {    // delete lines
-        if (e < 0) {    // no addr given- use defaults
+        if (!GOT_ADDRESS) { // no addr given- use defaults
             q = begin_line(dot);    // assume .,. for the range
             r = end_line(dot);
         }
@@ -1290,7 +1400,7 @@ static void colon(char *buf)
         rawmode();
         Hit_Return();
     } else if (strncmp(cmd, "list", i) == 0) {  // literal print line
-        if (e < 0) {    // no addr given- use defaults
+        if (!GOT_ADDRESS) { // no addr given- use defaults
             q = begin_line(dot);    // assume .,. for the range
             r = end_line(dot);
         }
@@ -1373,7 +1483,7 @@ static void colon(char *buf)
         if (e == 0) {   // user said ":0r foo"
             q = text;
         } else {    // read after given line or current line if none given
-            q = next_line(e > 0 ? find_line(e) : dot);
+            q = next_line(GOT_ADDRESS ? find_line(e) : dot);
             // read after last line
             if (q == end-1)
                 ++q;
@@ -1456,57 +1566,112 @@ static void colon(char *buf)
 #  if ENABLE_FEATURE_VI_VERBOSE_STATUS
         int last_line = 0, lines = 0;
 #  endif
+#  if ENABLE_FEATURE_VI_REGEX_SEARCH
+        regex_t preg;
+        int cflags;
+        char *Rorig;
+#   if ENABLE_FEATURE_VI_UNDO
+        int undo = 0;
+#   endif
+#  endif
 
         // F points to the "find" pattern
         // R points to the "replace" pattern
         // replace the cmd line delimiters "/" with NULs
         c = buf[1]; // what is the delimiter
         F = buf + 2;    // start of "find"
-        R = strchr(F, c);   // middle delimiter
+        R = strchr_backslash(F, c);   // middle delimiter
         if (!R)
             goto colon_s_fail;
         len_F = R - F;
         *R++ = '\0';    // terminate "find"
-        flags = strchr(R, c);
+        flags = strchr_backslash(R, c);
         if (flags) {
             *flags++ = '\0';    // terminate "replace"
             gflag = *flags;
         }
-        len_R = strlen(R);
 
-        if (e < 0) {    // no addr given
+        if (len_F) {    // save "find" as last search pattern
+            vi_free(last_search_pattern);
+            last_search_pattern = vi_strdup(F - 1);
+            last_search_pattern[0] = '/';
+        } else if (last_search_pattern[1] == '\0') {
+            status_line_bold("No previous search");
+            goto ret;
+        } else {
+            F = last_search_pattern + 1;
+            len_F = strlen(F);
+        }
+
+        if (!GOT_ADDRESS) { // no addr given
             q = begin_line(dot);      // start with cur line
             r = end_line(dot);
             b = e = count_lines(text, q); // cur line number
-        } else if (b < 0) { // one addr given
+        } else if (!GOT_RANGE) {    // one addr given
             b = e;
         }
+
+#  if ENABLE_FEATURE_VI_REGEX_SEARCH
+        Rorig = R;
+        cflags = 0;
+        if (ignorecase)
+            cflags = REG_ICASE;
+        memset(&preg, 0, sizeof(preg));
+        if (regcomp(&preg, F, cflags) != 0) {
+            status_line(":s bad search pattern");
+            goto regex_search_end;
+        }
+#  else
+        len_R = strlen(R);
+#  endif
 
         for (i = b; i <= e; i++) {  // so, :20,23 s \0 find \0 replace \0
             char *ls = q;       // orig line start
             char *found;
  vc4:
+#  if ENABLE_FEATURE_VI_REGEX_SEARCH
+            found = regex_search(q, &preg, Rorig, &len_F, &len_R, &R);
+#  else
             found = char_search(q, F, (FORWARD << 1) | LIMITED);    // search cur line only for "find"
+#  endif
             if (found) {
                 uintptr_t bias;
                 // we found the "find" pattern - delete it
                 // For undo support, the first item should not be chained
-                text_hole_delete(found, found + len_F - 1,
-                            subs ? ALLOW_UNDO_CHAIN: ALLOW_UNDO);
-                // can't do this above, no undo => no third argument
-                subs++;
-#  if ENABLE_FEATURE_VI_VERBOSE_STATUS
-                if (last_line != i) {
-                    last_line = i;
-                    ++lines;
-                }
+                // This needs to be handled differently depending on
+                // whether or not regex support is enabled.
+#  if ENABLE_FEATURE_VI_REGEX_SEARCH
+#   define TEST_LEN_F len_F // len_F may be zero
+#   define TEST_UNDO1 undo++
+#   define TEST_UNDO2 undo++
+#  else
+#   define TEST_LEN_F 1     // len_F is never zero
+#   define TEST_UNDO1 subs
+#   define TEST_UNDO2 1
 #  endif
-                // insert the "replace" patern
-                bias = string_insert(found, R, ALLOW_UNDO_CHAIN);
-                found += bias;
-                ls += bias;
-                dot = ls;
-                /*q += bias; - recalculated anyway */
+                if (TEST_LEN_F) // match can be empty, no delete needed
+                    text_hole_delete(found, found + len_F - 1,
+                                TEST_UNDO1 ? ALLOW_UNDO_CHAIN : ALLOW_UNDO);
+                if (len_R != 0) {   // insert the "replace" pattern, if required
+                    bias = string_insert(found, R,
+                                TEST_UNDO2 ? ALLOW_UNDO_CHAIN : ALLOW_UNDO);
+                    found += bias;
+                    ls += bias;
+                    //q += bias; - recalculated anyway
+                }
+#  if ENABLE_FEATURE_VI_REGEX_SEARCH
+                vi_free(R);
+#  endif
+                if (TEST_LEN_F || len_R != 0) {
+                    dot = ls;
+                    subs++;
+#  if ENABLE_FEATURE_VI_VERBOSE_STATUS
+                    if (last_line != i) {
+                        last_line = i;
+                        ++lines;
+                    }
+#  endif
+                }
                 // check for "global"  :s/foo/bar/g
                 if (gflag == 'g') {
                     if ((found + len_R) < end_line(ls)) {
@@ -1526,6 +1691,10 @@ static void colon(char *buf)
                 status_line("%d substitutions on %d lines", subs, lines);
 #  endif
         }
+#  if ENABLE_FEATURE_VI_REGEX_SEARCH
+ regex_search_end:
+        regfree(&preg);
+#  endif
 #endif /* FEATURE_VI_SEARCH */
     } else if (strncmp(cmd, "version", i) == 0) {  // show software version
         status_line(BB_VER " " BB_BT);
@@ -1609,7 +1778,7 @@ static void colon(char *buf)
         }
 # if ENABLE_FEATURE_VI_YANKMARK
     } else if (strncmp(cmd, "yank", i) == 0) {  // yank lines
-        if (b < 0) {    // no addr given- use defaults
+        if (!GOT_ADDRESS) { // no addr given- use defaults
             q = begin_line(dot);    // assume .,. for the range
             r = end_line(dot);
         }
@@ -2020,7 +2189,6 @@ static void new_screen(int ro, int co)
 }
 
 #if ENABLE_FEATURE_VI_SEARCH
-
 # if ENABLE_FEATURE_VI_REGEX_SEARCH
 
 // search for pattern starting at p
@@ -2029,16 +2197,16 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
     struct re_pattern_buffer preg;
     const char *err;
     char *q;
-    int i;
-    int size;
-    int range;
+    int i, size, range, start;
 
-    re_syntax_options = RE_SYNTAX_POSIX_EXTENDED;
+    re_syntax_options = RE_SYNTAX_POSIX_BASIC & (~RE_DOT_NEWLINE);
     if (ignorecase)
-        re_syntax_options = RE_SYNTAX_POSIX_EXTENDED | RE_ICASE;
+        re_syntax_options |= RE_ICASE;
 
     rt_memset(&preg, 0, sizeof(preg));
     err = re_compile_pattern(pat, strlen(pat), &preg);
+    preg.not_bol = p != text;
+    preg.not_eol = p != end - 1;
     if (err != NULL) {
         status_line_bold("bad search pattern '%s': %s", pat, err);
         return p;
@@ -2056,31 +2224,26 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
 
     // RANGE could be negative if we are searching backwards
     range = q - p;
-    q = p;
-    size = range;
     if (range < 0) {
-        size = -size;
-        q = p - size;
-        if (q < text)
-            q = text;
+        size = -range;
+        start = size;
+    } else {
+        size = range;
+        start = 0;
     }
+    q = p - start;
+    if (q < text)
+        q = text;
     // search for the compiled pattern, preg, in p[]
-    // range < 0: search backward
-    // range > 0: search forward
-    // 0 < start < size
+    // range < 0, start == size: search backward
+    // range > 0, start == 0: search forward
     // re_search() < 0: not found or error
     // re_search() >= 0: index of found pattern
     //           struct pattern   char     int   int    int    struct reg
     // re_search(*pattern_buffer, *string, size, start, range, *regs)
-    i = re_search(&preg, q, size, /*start:*/ 0, range, /*struct re_registers*:*/ NULL);
+    i = re_search(&preg, q, size, start, range, /*struct re_registers*:*/ NULL);
     regfree(&preg);
-    if (i < 0)
-        return NULL;
-    if (dir_and_range > 0) // FORWARD?
-        p = p + i;
-    else
-        p = p - i;
-    return p;
+    return i < 0 ? NULL : q + i;
 }
 
 # else
@@ -2171,7 +2334,7 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
         cmdcnt = 0;
         end_cmd_q();    // stop adding to q
         last_status_cksum = 0;  // force status update
-        if ((p[-1] != '\n') && (dot > text)) {
+        if ((dot > text) && (p[-1] != '\n')) {
             p--;
         }
 #if ENABLE_FEATURE_VI_SETOPTS
@@ -2358,10 +2521,12 @@ static int find_range(char **start, char **stop, int cmd)
         // for non-change operations WS after NL is not part of word
         if (cmd != 'c' && dot != t && *dot != '\n')
             dot = t;
-    } else if (strchr("GHL+-jk'\r\n", c)) {
+    } else if (strchr("GHL+-gjk'\r\n", c)) {
         // these operate on whole lines
         buftype = WHOLE;
         do_cmd(c);      // execute movement cmd
+        if (cmd_error)
+            buftype = -1;
     } else if (c == ' ' || c == 'l') {
         // forward motion by character
         int tmpcnt = (cmdcnt ? cmdcnt : 1);
@@ -3436,21 +3601,14 @@ static void print_literal(char *buf, const char *s)
     char *d;
     unsigned char c;
 
-    buf[0] = '\0';
     if (!s[0])
         s = "(NULL)";
 
     d = buf;
     for (; *s; s++) {
-        int c_is_no_print;
-
         c = *s;
-        c_is_no_print = (c & 0x80) && !Isprint(c);
-        if (c_is_no_print) {
-            strcpy(d, ESC_NORM_TEXT);
-            d += sizeof(ESC_NORM_TEXT)-1;
-            c = '.';
-        }
+        if ((c & 0x80) && !Isprint(c))
+            c = '?';
         if (c < ' ' || c == 0x7f) {
             *d++ = '^';
             c |= '@'; /* 0x40 */
@@ -3459,14 +3617,6 @@ static void print_literal(char *buf, const char *s)
         }
         *d++ = c;
         *d = '\0';
-        if (c_is_no_print) {
-            strcpy(d, ESC_BOLD_TEXT);
-            d += sizeof(ESC_BOLD_TEXT)-1;
-        }
-        if (*s == '\n') {
-            *d++ = '$';
-            *d = '\0';
-        }
         if (d - buf > MAX_INPUT_LEN - 10) // paranoia
             break;
     }
@@ -4190,8 +4340,8 @@ static void do_cmd(int c)
 #endif
                     }
                 }
-            } else /* if (c == '>') */ {
-                // shift right -- add tab or tabstop spaces
+            } else if (/* c == '>' && */ p != end_line(p)) {
+                // shift right -- add tab or tabstop spaces on non-empty lines
                 char_insert(p, '\t', allow_undo);
             }
 #if ENABLE_FEATURE_VI_UNDO
@@ -4246,6 +4396,7 @@ static void do_cmd(int c)
             buf[1] = (c1 >= 0 ? c1 : '*');
             buf[2] = '\0';
             not_implemented(buf);
+            cmd_error = TRUE;
             break;
         }
         if (cmdcnt == 0)

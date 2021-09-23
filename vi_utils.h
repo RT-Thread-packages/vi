@@ -6,7 +6,6 @@
 #define __VI_UTILS_H__
 
 #include <ctype.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdint.h>
@@ -16,11 +15,12 @@
 #include <stddef.h>
 #include <string.h>
 #include <unistd.h>
-#include <dfs_posix.h>
-#include <dfs_poll.h>
+#include <poll.h>
 #include <sys/types.h>
+#include <sys/errno.h>
+#include <sys/stat.h>
 
-#include <mem_sandbox.h>
+#include <rtthread.h>
 
 #define BB_VER "latest: 2021-06-17"
 #define BB_BT  "Busybox vi for RT-Thread"
@@ -372,6 +372,7 @@ void vi_free(void *ptr);
 void* vi_zalloc(size_t size);
 char *vi_strdup(const char *s);
 char *vi_strndup(const char *s, size_t n);
+
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);
 char* xasprintf(const char *format, ...);

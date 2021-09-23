@@ -3,12 +3,12 @@
  */
 
 #include "vi_utils.h"
+#include <mem_sandbox.h>
 
 #define DBG_TAG "vi"
 #define DBG_LVL DBG_INFO
 #include <rtdbg.h>
 
-#include <rtconfig.h>
 #ifndef VI_SANDBOX_SIZE_KB
 #define VI_SANDBOX_SIZE_KB   20 /* KB */
 #endif

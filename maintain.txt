@@ -1,3 +1,7 @@
 维护注意事项:
 原vi.c文件中的 strtoul strdup strndup malloc realloc free zalloc需要加vi_前缀.
 optind变量需要改为options.optind
+
+暂时跳过同步的commits:
+https://github.com/mirror/busybox/commit/f07772f19e29cf44a14c108935afb5668e38fac3
+https://github.com/mirror/busybox/commit/f9217cd235c2a139ae22cf549c7614724f1fc6cf

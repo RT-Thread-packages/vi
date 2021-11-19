@@ -15,7 +15,11 @@
 #include <stddef.h>
 #include <string.h>
 #include <unistd.h>
+#if RT_VER_NUM > 0x40004
 #include <poll.h>
+#else
+#include <dfs_poll.h>
+#endif
 #include <sys/types.h>
 #include <sys/errno.h>
 #include <sys/stat.h>

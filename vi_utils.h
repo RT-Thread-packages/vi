@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <unistd.h>
-#if RT_VER_NUM > 0x40004
+#if RT_VER_NUM >= 0x40100
 #include <poll.h>
 #else
 #include <dfs_poll.h>

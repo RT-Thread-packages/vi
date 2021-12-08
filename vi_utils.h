@@ -5,6 +5,7 @@
 #ifndef __VI_UTILS_H__
 #define __VI_UTILS_H__
 
+#include <rtthread.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -23,8 +24,6 @@
 #include <sys/types.h>
 #include <sys/errno.h>
 #include <sys/stat.h>
-
-#include <rtthread.h>
 
 #define BB_VER "latest: 2021-06-17"
 #define BB_BT  "Busybox vi for RT-Thread"

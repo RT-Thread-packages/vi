@@ -25,7 +25,7 @@
 #include <sys/errno.h>
 #include <sys/stat.h>
 
-#define BB_VER "latest: 2021-06-17"
+#define BB_VER "latest: 2021-08-29"
 #define BB_BT  "Busybox vi for RT-Thread"
 
 //config:config FEATURE_VI_MAX_LEN

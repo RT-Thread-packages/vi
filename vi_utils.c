@@ -645,19 +645,9 @@ int get_terminal_width_height(int fd, unsigned *width, unsigned *height)
 {
     struct winsize win;
     int err;
-    int close_me = -1;
 
     if (fd == -1) {
-        if (isatty(STDOUT_FILENO))
-            fd = STDOUT_FILENO;
-        else
-        if (isatty(STDERR_FILENO))
-            fd = STDERR_FILENO;
-        else
-        if (isatty(STDIN_FILENO))
-            fd = STDIN_FILENO;
-        else
-            close_me = fd = open("/dev/tty", O_RDONLY);
+        fd = STDOUT_FILENO;
     }
 
     win.ws_row = 0;
@@ -669,9 +659,6 @@ int get_terminal_width_height(int fd, unsigned *width, unsigned *height)
         *height = wh_helper(win.ws_row, 24, "LINES", &err);
     if (width)
         *width = wh_helper(win.ws_col, 80, "COLUMNS", &err);
-
-    if (close_me >= 0)
-        close(close_me);
 
     return err;
 }

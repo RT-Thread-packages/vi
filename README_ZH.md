@@ -8,6 +8,8 @@ vi 是类 unix 平台下著名的的文本编辑器。本软件包是 vi 对 RT-
 
 官方仓库：https://github.com/mirror/busybox/blob/master/editors/vi.c
 
+维护参考：https://gitee.com/mysterywolf/busybox/blob/master/editors/vi.c
+
 教学视频：https://www.bilibili.com/video/BV18f4y1S7St
 
 ### 1.1. 文件结构 ###

@@ -583,7 +583,6 @@ static int vi_main(int argc, char **argv)
     cmdline_filecnt = argc - options.optind;
     options.optind = 0;
     file_name = optparse_arg(&options);
-
     if(file_name == NULL)
     {
         rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
@@ -593,7 +592,8 @@ static int vi_main(int argc, char **argv)
     // "Save cursor, use alternate screen buffer, clear screen"
     write1("\033[?1049h");
     // This is the main file handling loop
-    while (1) {
+    while (1)
+    {
         edit_file(file_name); // might be NULL on 1st iteration
         // NB: optind can be changed by ":next" and ":rewind" commands
         options.optind++;
@@ -1139,7 +1139,7 @@ static char *regex_search(char *q, regex_t *preg, const char *Rorig,
         }
         *len_R += len;
         if (*R) {
-            memcpy(r, from, len);
+            rt_memcpy(r, from, len);
             r += len;
             /* *r = '\0'; - xzalloc did it */
         }
@@ -1623,7 +1623,7 @@ static void colon(char *buf)
         cflags = 0;
         if (ignorecase)
             cflags = REG_ICASE;
-        memset(&preg, 0, sizeof(preg));
+        rt_memset(&preg, 0, sizeof(preg));
         if (regcomp(&preg, F, cflags) != 0) {
             status_line(":s bad search pattern");
             goto regex_search_end;
@@ -2256,9 +2256,9 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
 # else
 
 #  if ENABLE_FEATURE_VI_SETOPTS
-#ifdef __GNUC__
-#include <strings.h>
-#endif
+#   ifdef __GNUC__
+#    include <strings.h>
+#   endif
 static int mycmp(const char *s1, const char *s2, int len)
 {
     if (ignorecase) {
@@ -2444,9 +2444,9 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
 #if ENABLE_FEATURE_VI_UNDO
                 undo_push_insert(p, ntab + nspc, undo);
 #endif
-                memset(p, '\t', ntab);
+                rt_memset(p, '\t', ntab);
                 p += ntab;
-                memset(p, ' ', nspc);
+                rt_memset(p, ' ', nspc);
                 return p + nspc;
             }
         }

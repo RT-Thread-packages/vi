@@ -679,7 +679,7 @@ static int get_termios_and_make_raw(int fd, struct termios *newterm, struct term
 //TODO: slattach, shell read might be adapted to use this too: grep for "tcsetattr", "[VTIME] = 0"
     int r;
 
-    memset(oldterm, 0, sizeof(*oldterm)); /* paranoia */
+    rt_memset(oldterm, 0, sizeof(*oldterm)); /* paranoia */
     r = tcgetattr(fd, oldterm);
     *newterm = *oldterm;
 

@@ -575,19 +575,24 @@ static int vi_main(int argc, char **argv)
             // fall through
         default:
             rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
-            return 1;
+            goto vi_exit;
         }
     }
 
     options.argv += options.optind;
     cmdline_filecnt = argc - options.optind;
+    options.optind = 0;
+    file_name = optparse_arg(&options);
+
+    if(file_name == NULL)
+    {
+        rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
+        goto vi_exit;
+    }
 
     // "Save cursor, use alternate screen buffer, clear screen"
     write1("\033[?1049h");
     // This is the main file handling loop
-    options.optind = 0;
-    file_name = optparse_arg(&options);
-
     while (1) {
         edit_file(file_name); // might be NULL on 1st iteration
         // NB: optind can be changed by ":next" and ":rewind" commands
@@ -600,6 +605,7 @@ static int vi_main(int argc, char **argv)
     write1("\033[?1049l");
 
     /* RT-Thread team added */
+vi_exit:
     vi_free(text);
     vi_free(screen);
     vi_free(current_filename);
@@ -703,13 +709,6 @@ static void edit_file(char *fn)
 #if ENABLE_FEATURE_VI_USE_SIGNALS
     int sig;
 #endif
-
-    /* no file name */
-    if(fn == NULL)
-    {
-        rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
-        return;
-    }
 
     editing = 1;    // 0 = exit, 1 = one file, 2 = multiple files
     rawmode();

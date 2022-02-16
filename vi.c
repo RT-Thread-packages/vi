@@ -501,7 +501,7 @@ static struct optparse options;
 
 static void write1(const char *out)
 {
-    fputs(out, stdout);
+    rt_kprintf(out); /* fputs(out, stdout); */
 }
 
 static int vi_main(int argc, char **argv)
@@ -574,7 +574,7 @@ static int vi_main(int argc, char **argv)
             show_help();
             // fall through
         default:
-            printf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
+            rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
             return 1;
         }
     }
@@ -587,6 +587,7 @@ static int vi_main(int argc, char **argv)
     // This is the main file handling loop
     options.optind = 0;
     file_name = optparse_arg(&options);
+
     while (1) {
         edit_file(file_name); // might be NULL on 1st iteration
         // NB: optind can be changed by ":next" and ":rewind" commands
@@ -702,6 +703,13 @@ static void edit_file(char *fn)
 #if ENABLE_FEATURE_VI_USE_SIGNALS
     int sig;
 #endif
+
+    /* no file name */
+    if(fn == NULL)
+    {
+        rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
+        return;
+    }
 
     editing = 1;    // 0 = exit, 1 = one file, 2 = multiple files
     rawmode();
@@ -1317,7 +1325,7 @@ static void colon(char *buf)
         cookmode();
         retcode = system(exp); // run the cmd
         if (retcode)
-            printf("\nshell returned %i\n\n", retcode);
+            rt_kprintf("\nshell returned %i\n\n", retcode);
         rawmode();
         Hit_Return();           // let user see results
     }
@@ -1405,7 +1413,7 @@ static void colon(char *buf)
             r = end_line(dot);
         }
         go_bottom_and_clear_to_eol();
-        puts("\r");
+        rt_kprintf("\r");
         for (; q <= r; q++) {
             int c_is_no_print;
 
@@ -1418,13 +1426,13 @@ static void colon(char *buf)
             if (c == '\n') {
                 write1("$\r");
             } else if (c < ' ' || c == 127) {
-                putchar('^');
+                vi_putchar('^');
                 if (c == 127)
                     c = '?';
                 else
                     c += '@';
             }
-            putchar(c);
+            vi_putchar(c);
             if (c_is_no_print)
                 standout_end();
         }
@@ -3013,7 +3021,7 @@ static char *yank_delete(char *start, char *stop, int buftype, int yf, int undo)
 
 static void show_help(void)
 {
-    puts("These features are available:"
+    rt_kprintf("These features are available:"
 #if ENABLE_FEATURE_VI_SEARCH
     "\n\tPattern searches with / and ?"
 #endif
@@ -3249,7 +3257,7 @@ static int readit(void) // read (maybe cursor) key from stdin
             goto again;
         go_bottom_and_clear_to_eol();
         cookmode(); // terminal to "cooked"
-        printf("can't read user input");
+        rt_kprintf("can't read user input");
     }
     return c;
 }
@@ -3347,7 +3355,7 @@ static char *get_input_line(const char *prompt)
             // (TODO: need to handle Unicode)
             buf[i] = c;
             buf[++i] = '\0';
-            putchar(c);
+            vi_putchar(c);
         }
     }
     refresh(FALSE);
@@ -3466,7 +3474,7 @@ static void place_cursor(int row, int col)
     if (col < 0) col = 0;
     if (col >= columns) col = columns - 1;
 
-    sprintf(cm1, ESC_SET_CURSOR_POS, row + 1, col + 1);
+    rt_sprintf(cm1, ESC_SET_CURSOR_POS, row + 1, col + 1);
     write1(cm1);
 }
 
@@ -3571,7 +3579,7 @@ static void status_line_bold(const char *format, ...)
 
     va_start(args, format);
     strcpy(status_buffer, ESC_BOLD_TEXT);
-    vsnprintf(status_buffer + (sizeof(ESC_BOLD_TEXT)-1),
+    rt_vsnprintf(status_buffer + (sizeof(ESC_BOLD_TEXT)-1),
         STATUS_BUFFER_LEN - sizeof(ESC_BOLD_TEXT) - sizeof(ESC_NORM_TEXT),
         format, args
     );
@@ -3592,7 +3600,7 @@ static void status_line(const char *format, ...)
     va_list args;
 
     va_start(args, format);
-    vsnprintf(status_buffer, STATUS_BUFFER_LEN, format, args);
+    rt_vsnprintf(status_buffer, STATUS_BUFFER_LEN, format, args);
     va_end(args);
 
     have_status_msg = 1;
@@ -3673,7 +3681,7 @@ static int format_edit_status(void)
     trunc_at = columns < STATUS_BUFFER_LEN-1 ?
         columns : STATUS_BUFFER_LEN-1;
 
-    ret = snprintf(status_buffer, trunc_at+1,
+    ret = rt_snprintf(status_buffer, trunc_at+1,
 #if ENABLE_FEATURE_VI_READONLY
         "%c %s%s%s %d/%d %d%%",
 #else
@@ -3848,7 +3856,7 @@ static void refresh(int full_screen)
             rt_memcpy(sp+cs, out_buf+cs, ce-cs+1);
             place_cursor(li, cs);
             // write line out to terminal
-            fwrite(&sp[cs], ce - cs + 1, 1, stdout);
+            write(STDOUT_FILENO, &sp[cs], ce - cs + 1); /* fwrite(&sp[cs], ce - cs + 1, 1, stdout); */
         }
     }
 
@@ -4942,7 +4950,7 @@ static void crash_test()
     }
 
     if (msg[0]) {
-        printf("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
+        rt_kprintf("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
             totalcmds, last_input_char, msg, ESC_BOLD_TEXT, ESC_NORM_TEXT);
         fflush_all();
         while (safe_read(STDIN_FILENO, d, 1) > 0) {

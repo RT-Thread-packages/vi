@@ -218,7 +218,7 @@ int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
         /* I doubt many callers would handle this correctly! */
         if (errno == ENOMEM)
             continue;
-        printf("poll");
+        rt_kprintf("poll");
         return n;
     }
 }
@@ -306,6 +306,12 @@ char *vi_strndup(const char *s, size_t n)
         return RT_NULL;
     }
     return p;
+}
+
+int vi_putchar(int c)
+{
+    rt_kprintf("%c", c);
+    return (int)c;
 }
 
 int64_t read_key(int fd, char *buffer, int timeout)
@@ -577,7 +583,7 @@ static int vasprintf(char **string_ptr, const char *format, va_list p)
     char buf[128];
 
     va_copy(p2, p);
-    r = vsnprintf(buf, 128, format, p);
+    r = rt_vsnprintf(buf, 128, format, p);
     va_end(p);
 
     /* Note: can't use xstrdup/xmalloc, they call vasprintf (us) on failure! */
@@ -589,7 +595,7 @@ static int vasprintf(char **string_ptr, const char *format, va_list p)
     }
 
     *string_ptr = vi_malloc(r+1);
-    r = (*string_ptr ? vsnprintf(*string_ptr, r+1, format, p2) : -1);
+    r = (*string_ptr ? rt_vsnprintf(*string_ptr, r+1, format, p2) : -1);
     va_end(p2);
 
     return r;
@@ -607,7 +613,7 @@ char* xasprintf(const char *format, ...)
     r = vasprintf(&string_ptr, format, p);
     va_end(p);
     if (r < 0)
-        printf("die_memory_exhausted"); //bb_die_memory_exhausted();
+        rt_kprintf("die_memory_exhausted"); //bb_die_memory_exhausted();
     return string_ptr;
 }
 

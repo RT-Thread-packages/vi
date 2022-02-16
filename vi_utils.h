@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -365,7 +364,7 @@ int isatty (int  fd);
 #endif
 
 #define vi_strtou strtoul
-#define fflush_all() fflush(NULL)
+#define fflush_all() /*fflush(NULL)*/ /*RT-Thread don't need to flush STDOUT*/
 
 unsigned char vi_mem_init(void);
 void vi_mem_release(void);
@@ -375,6 +374,7 @@ void vi_free(void *ptr);
 void* vi_zalloc(size_t size);
 char *vi_strdup(const char *s);
 char *vi_strndup(const char *s, size_t n);
+int vi_putchar(int c);
 
 int64_t read_key(int fd, char *buffer, int timeout);
 void *memrchr(const void* ptr, int ch, size_t pos);

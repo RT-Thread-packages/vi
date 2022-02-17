@@ -342,13 +342,16 @@ typedef enum {FALSE = 0, TRUE = !FALSE} bool;
 typedef int smallint;
 typedef unsigned smalluint;
 
-#if defined(_MSC_VER) || defined(__CC_ARM) || defined(__ICCARM__)
+#ifndef F_OK
+#define F_OK    0               /* Tests whether the file exists. */
+#define R_OK    4               /* Tests whether the file can be accessed for reading. */
+#define W_OK    2               /* Tests whether the file can be accessed for writing. */
+#define X_OK    1               /* Tests whether the file can be accessed for execution. */
+#endif
+
+#if !defined(__GNUC__)
 #define ALIGN1
 #define barrier()
-#define F_OK    0
-#define R_OK    4
-#define W_OK    2
-#define X_OK    1
 #else
 #define ALIGN1 __attribute__((aligned(1)))
 /* At least gcc 3.4.6 on mipsel system needs optimization barrier */

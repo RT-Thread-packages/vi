@@ -47,15 +47,6 @@ char* last_char_is(const char *s, int c)
 }
 #endif
 
-#ifndef __ICCARM__
-int isblank(int ch)
-{
-    if (ch == ' ' || ch == '\t')
-        return 1;
-    return 0;
-}
-#endif
-
 #ifdef VI_ENABLE_SETOPTS
 char* skip_whitespace(const char *s)
 {

@@ -47,19 +47,6 @@ char* last_char_is(const char *s, int c)
 }
 #endif
 
-#if defined(_MSC_VER) || defined(__CC_ARM) || defined(__ICCARM__)
-void *memrchr(const void* ptr, int ch, size_t pos)
-{
-    char *end = (char *)ptr+pos-1;
-    while (end != ptr)
-    {
-        if (*end == ch)
-            return end;
-        end--;
-    }
-    return (*end == ch)?(end):(NULL);
-}
-
 #ifndef __ICCARM__
 int isblank(int ch)
 {
@@ -67,7 +54,6 @@ int isblank(int ch)
         return 1;
     return 0;
 }
-#endif
 #endif
 
 #ifdef VI_ENABLE_SETOPTS
@@ -751,12 +737,3 @@ int set_termios_to_raw(int fd, struct termios *oldterm, int flags)
 }
 
 #endif /* RT_USING_POSIX_TERMIOS */
-
-#if defined(VI_ENABLE_SEARCH) && !defined(__GNUC__)
-char* strchrnul(const char *s, int c)
-{
-    while (*s != '\0' && *s != c)
-        s++;
-    return (char*)s;
-}
-#endif

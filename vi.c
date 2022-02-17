@@ -2256,9 +2256,6 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
 # else
 
 #  if ENABLE_FEATURE_VI_SETOPTS
-#   ifdef __GNUC__
-#    include <strings.h>
-#   endif
 static int mycmp(const char *s1, const char *s2, int len)
 {
     if (ignorecase) {

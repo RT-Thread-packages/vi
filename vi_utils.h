@@ -11,6 +11,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <poll.h>
 #include <sys/types.h>
@@ -370,12 +371,7 @@ char *vi_strndup(const char *s, size_t n);
 int vi_putchar(int c);
 
 int64_t read_key(int fd, char *buffer, int timeout);
-void *memrchr(const void* ptr, int ch, size_t pos);
 char* xasprintf(const char *format, ...);
-
-#ifdef VI_ENABLE_SEARCH
-char* strchrnul(const char *s, int c);
-#endif
 
 #ifdef VI_ENABLE_COLON
 char* last_char_is(const char *s, int c);

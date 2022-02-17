@@ -350,7 +350,6 @@ typedef unsigned smalluint;
 #define W_OK    2
 #define X_OK    1
 int isblank(int ch);
-int isatty (int  fd);
 #else
 #define ALIGN1 __attribute__((aligned(1)))
 /* At least gcc 3.4.6 on mipsel system needs optimization barrier */

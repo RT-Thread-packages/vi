@@ -441,7 +441,7 @@ static void status_line_bold_errno(const char *fn);
 static void not_implemented(const char *); // display "Not implemented" message
 static int format_edit_status(void);    // format file status on status line
 static void redraw(int);    // force a full screen refresh
-static char* format_line(char* /*, int*/);
+static char *format_line(char* /*, int*/);
 static void refresh(int);   // update the terminal from screen[]
 
 static void indicate_error(void);       // use flash or beep to indicate error
@@ -2317,10 +2317,6 @@ static size_t indent_len(char *p)
     return r - p;
 }
 
-
-#if !ENABLE_FEATURE_VI_UNDO
-#define char_insert(a,b,c) char_insert(a,b)
-#endif
 static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
 {
 #if ENABLE_FEATURE_VI_SETOPTS
@@ -2994,9 +2990,6 @@ static char *text_hole_delete(char *p, char *q, int undo) // delete "p" through 
 
 // copy text into register, then delete text.
 //
-#if !ENABLE_FEATURE_VI_UNDO
-#define yank_delete(a,b,c,d,e) yank_delete(a,b,c,d)
-#endif
 static char *yank_delete(char *start, char *stop, int buftype, int yf, int undo)
 {
     char *p;
@@ -3713,7 +3706,7 @@ static void redraw(int full_screen)
 }
 
 //----- Format a text[] line into a buffer ---------------------
-static char* format_line(char *src /*, int li*/)
+static char *format_line(char *src /*, int li*/)
 {
     unsigned char c;
     int co;
@@ -4305,7 +4298,8 @@ static void do_cmd(int c)
                 dot += dir;
             }
             goto dc6; // end of file
- dc2:       continue;
+ dc2:
+            continue;
         } while (--cmdcnt > 0);
         break;
 #endif /* FEATURE_VI_SEARCH */

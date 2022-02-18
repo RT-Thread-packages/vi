@@ -420,7 +420,12 @@ static void rawmode(void);  // set "raw" mode on tty
 static void cookmode(void); // return to "cooked" mode on tty
 // sleep for 'h' 1/100 seconds, return 1/0 if stdin is (ready for read)/(not ready)
 static int mysleep(int);
+static int readit(void);
+#if ENABLE_FEATURE_VI_DOT_CMD
 static int get_one_char(void);  // read 1 char from stdin
+#else
+# define get_one_char() readit()
+#endif
 static int get_motion_char(void); // Get type of thing to operate on and adjust count
 static int file_insert(const char *, char *, int); // file_insert might reallocate text[]!
 static int file_write(char *, char *, char *);
@@ -3293,8 +3298,6 @@ static int get_one_char(void)
     }
     return c;
 }
-#else
-# define get_one_char() readit()
 #endif
 
 // Get type of thing to operate on and adjust count

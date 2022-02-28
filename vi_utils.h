@@ -360,8 +360,6 @@ typedef unsigned smalluint;
 #endif
 
 #define vi_strtou strtoul
-#define fflush_all() /*fflush(NULL)*/ /*RT-Thread don't need to flush STDOUT*/
-
 unsigned char vi_mem_init(void);
 void vi_mem_release(void);
 void *vi_malloc(rt_size_t size);

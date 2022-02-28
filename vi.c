@@ -225,7 +225,7 @@ struct globals {
 #if ENABLE_FEATURE_VI_USE_SIGNALS
     sigjmp_buf restart;     // int_handler() jumps to location remembered here
 #endif
-#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
+#ifdef RT_USING_POSIX_TERMIOS
     struct termios term_orig; // remember what the cooked mode was
 #endif
     int cindex;               // saved character index for up/down motion
@@ -342,7 +342,7 @@ struct globals {
 #define regtype        (G.regtype )
 #define mark           (G.mark          )
 #define restart        (G.restart       )
-#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
+#ifdef RT_USING_POSIX_TERMIOS
 #define term_orig      (G.term_orig     )
 #endif
 #define cindex         (G.cindex        )
@@ -504,17 +504,12 @@ static int crashme = 0;
 
 static struct optparse options;
 
-static void write1(const char *out)
-{
-    rt_kprintf(out); /* fputs(out, stdout); */
-}
-
 static int vi_main(int argc, char **argv)
 {
     int c;
     char *file_name;
 
-    if(vi_mem_init() == 0) // RT-Thread team added
+    if(vi_mem_init() == 0)
     {
         rt_kprintf("vi initialization failed.\r\n");
         return -1;
@@ -552,7 +547,7 @@ static int vi_main(int argc, char **argv)
             initial_cmds[0] = vi_strndup(p, MAX_INPUT_LEN);
     }
 #endif
-    optparse_init(&options, argv); // RT-Thread team added
+    optparse_init(&options, argv);
     while ((c = optparse(&options,
 #if ENABLE_FEATURE_VI_CRASHME
             "C"
@@ -595,7 +590,7 @@ static int vi_main(int argc, char **argv)
     }
 
     // "Save cursor, use alternate screen buffer, clear screen"
-    write1("\033[?1049h");
+    rt_kprintf("\033[?1049h");
     // This is the main file handling loop
     while (1)
     {
@@ -607,9 +602,8 @@ static int vi_main(int argc, char **argv)
             break;
     }
     // "Use normal screen buffer, restore cursor"
-    write1("\033[?1049l");
+    rt_kprintf("\033[?1049l");
 
-    /* RT-Thread team added */
 vi_exit:
     vi_free(text);
     vi_free(screen);
@@ -621,7 +615,6 @@ vi_exit:
     vi_free(last_search_pattern);
 #endif
     vi_free(ptr_to_globals);
-    fflush_all();
 
     vi_mem_release();
     return 0;
@@ -723,8 +716,7 @@ static void edit_file(char *fn)
 #if ENABLE_FEATURE_VI_ASK_TERMINAL
     if (G.get_rowcol_error /* TODO? && no input on stdin */) {
         uint64_t k;
-        write1("\033[999;999H" "\033[6n");
-        fflush_all();
+        rt_kprintf("\033[999;999H" "\033[6n");
         k = read_key(STDIN_FILENO, readbuffer, /*timeout_ms:*/ 100);
         if ((int32_t)k == KEYCODE_CURSOR_POS) {
             uint32_t rc = (k >> 32);
@@ -1428,7 +1420,7 @@ static void colon(char *buf)
                 standout_start();
             }
             if (c == '\n') {
-                write1("$\r");
+                rt_kprintf("$\r");
             } else if (c < ' ' || c == 127) {
                 vi_putchar('^');
                 if (c == 127)
@@ -1821,7 +1813,7 @@ static void Hit_Return(void)
     int c;
 
     standout_start();
-    write1("[Hit return to continue]");
+    rt_kprintf("[Hit return to continue]");
     standout_end();
     while ((c = get_one_char()) != '\n' && c != '\r')
         continue;
@@ -2386,7 +2378,7 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
         }
 #endif
     } else if (
-        #ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
+        #ifdef RT_USING_POSIX_TERMIOS
             c == term_orig.c_cc[VERASE] ||
         #endif
             c == 8 || c == 127) { // Is this a BS
@@ -3163,7 +3155,7 @@ static void yank_status(const char *op, const char *p, int cnt)
 //----- Set terminal attributes --------------------------------
 static void rawmode(void)
 {
-#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
+#ifdef RT_USING_POSIX_TERMIOS
     // no TERMIOS_CLEAR_ISIG: leave ISIG on - allow signals
     set_termios_to_raw(STDIN_FILENO, &term_orig, TERMIOS_RAW_CRNL);
 #endif
@@ -3171,8 +3163,7 @@ static void rawmode(void)
 
 static void cookmode(void)
 {
-    fflush_all();
-#ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
+#ifdef RT_USING_POSIX_TERMIOS
     tcsetattr_stdin_TCSANOW(&term_orig);
 #endif
 }
@@ -3226,9 +3217,6 @@ static int mysleep(int hund)
 {
     struct pollfd pfd[1];
 
-    if (hund != 0)
-        fflush_all();
-
     pfd[0].fd = STDIN_FILENO;
     pfd[0].events = POLLIN;
     return safe_poll(pfd, 1, hund*10) > 0;
@@ -3238,8 +3226,6 @@ static int mysleep(int hund)
 static int readit(void) // read (maybe cursor) key from stdin
 {
     int c;
-
-    fflush_all();
 
     // Wait for input. TIMEOUT = -1 makes read_key wait even
     // on nonblocking stdin.
@@ -3326,7 +3312,7 @@ static char *get_input_line(const char *prompt)
     strcpy(buf, prompt);
     last_status_cksum = 0;  // force status update
     go_bottom_and_clear_to_eol();
-    write1(buf); // write out the :, /, or ? prompt
+    rt_kprintf(buf); // write out the :, /, or ? prompt
 
     i = strlen(buf);
     while (i < MAX_INPUT_LEN - 1) {
@@ -3334,12 +3320,12 @@ static char *get_input_line(const char *prompt)
         if (c == '\n' || c == '\r' || c == 27)
             break;      // this is end of input
         if (
-            #ifdef RT_USING_POSIX_TERMIOS // RT-Thread team added
+            #ifdef RT_USING_POSIX_TERMIOS
                 c == term_orig.c_cc[VERASE] ||
             #endif
                 c == 8 || c == 127) {
             // user wants to erase prev char
-            write1("\b \b"); // erase char on screen
+            rt_kprintf("\b \b"); // erase char on screen
             buf[--i] = '\0';
             if (i <= 0) // user backs up before b-o-l, exit
                 break;
@@ -3467,13 +3453,13 @@ static void place_cursor(int row, int col)
     if (col >= columns) col = columns - 1;
 
     rt_sprintf(cm1, ESC_SET_CURSOR_POS, row + 1, col + 1);
-    write1(cm1);
+    rt_kprintf(cm1);
 }
 
 //----- Erase from cursor to end of line -----------------------
 static void clear_to_eol(void)
 {
-    write1(ESC_CLEAR2EOL);
+    rt_kprintf(ESC_CLEAR2EOL);
 }
 
 static void go_bottom_and_clear_to_eol(void)
@@ -3485,13 +3471,13 @@ static void go_bottom_and_clear_to_eol(void)
 //----- Start standout mode ------------------------------------
 static void standout_start(void)
 {
-    write1(ESC_BOLD_TEXT);
+    rt_kprintf(ESC_BOLD_TEXT);
 }
 
 //----- End standout mode --------------------------------------
 static void standout_end(void)
 {
-    write1(ESC_NORM_TEXT);
+    rt_kprintf(ESC_NORM_TEXT);
 }
 
 //----- Flash the screen  --------------------------------------
@@ -3512,7 +3498,7 @@ static void indicate_error(void)
 #endif
     cmd_error = TRUE;
     if (!err_method) {
-        write1(ESC_BELL);
+        rt_kprintf(ESC_BELL);
     } else {
         flash(10);
     }
@@ -3549,7 +3535,7 @@ static void show_status_line(void)
     if (have_status_msg || ((cnt > 0 && last_status_cksum != cksum))) {
         last_status_cksum = cksum;      // remember if we have seen this line
         go_bottom_and_clear_to_eol();
-        write1(status_buffer);
+        rt_kprintf(status_buffer);
         if (have_status_msg) {
             if (((int)strlen(status_buffer) - (have_status_msg - 1)) >
                     (columns - 1) ) {
@@ -3560,7 +3546,6 @@ static void show_status_line(void)
         }
         place_cursor(crow, ccol);  // put cursor back in correct place
     }
-    fflush_all();
 }
 
 //----- format the status buffer, the bottom line of screen ------
@@ -3698,7 +3683,7 @@ static int format_edit_status(void)
 static void redraw(int full_screen)
 {
     // cursor to top,left; clear to the end of screen
-    write1(ESC_SET_CURSOR_TOPLEFT ESC_CLEAR2EOS);
+    rt_kprintf(ESC_SET_CURSOR_TOPLEFT ESC_CLEAR2EOS);
     screen_erase();     // erase the internal screen buffer
     last_status_cksum = 0;  // force status update
     refresh(full_screen);   // this will redraw the entire display
@@ -4945,7 +4930,6 @@ static void crash_test()
     if (msg[0]) {
         rt_kprintf("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
             totalcmds, last_input_char, msg, ESC_BOLD_TEXT, ESC_NORM_TEXT);
-        fflush_all();
         while (safe_read(STDIN_FILENO, d, 1) > 0) {
             if (d[0] == '\n' || d[0] == '\r')
                 break;

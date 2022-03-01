@@ -23,11 +23,6 @@ struct globals;
  * If you want to assign a value, use SET_PTR_TO_GLOBALS(x) */
 struct globals *ptr_to_globals;
 
-/* Should be after libbb.h: on some systems regex.h needs sys/types.h: */
-#if ENABLE_FEATURE_VI_REGEX_SEARCH
-# include <regex.h>
-#endif
-
 /* the CRASHME code is unmaintained, and doesn't currently build */
 #define ENABLE_FEATURE_VI_CRASHME 0
 
@@ -1084,74 +1079,7 @@ static char *expand_args(char *args)
 # endif
 #endif /* FEATURE_VI_COLON */
 
-#if ENABLE_FEATURE_VI_REGEX_SEARCH
-# define MAX_SUBPATTERN 10  // subpatterns \0 .. \9
-
-// Like strchr() but skipping backslash-escaped characters
-static char *strchr_backslash(const char *s, int c)
-{
-    while (*s) {
-        if (*s == c)
-            return (char *)s;
-        if (*s == '\\')
-            if (*++s == '\0')
-                break;
-        s++;
-    }
-    return NULL;
-}
-
-// If the return value is not NULL the caller should free R
-static char *regex_search(char *q, regex_t *preg, const char *Rorig,
-                size_t *len_F, size_t *len_R, char **R)
-{
-    regmatch_t regmatch[MAX_SUBPATTERN], *cur_match;
-    char *found = NULL;
-    const char *t;
-    char *r;
-
-    regmatch[0].rm_so = 0;
-    regmatch[0].rm_eo = end_line(q) - q;
-    if (regexec(preg, q, MAX_SUBPATTERN, regmatch, REG_STARTEND) != 0)
-        return found;
-
-    found = q + regmatch[0].rm_so;
-    *len_F = regmatch[0].rm_eo - regmatch[0].rm_so;
-    *R = NULL;
-
- fill_result:
-    // first pass calculates len_R, second fills R
-    *len_R = 0;
-    for (t = Rorig, r = *R; *t; t++) {
-        size_t len = 1; // default is to copy one char from replace pattern
-        const char *from = t;
-        if (*t == '\\') {
-            from = ++t; // skip backslash
-            if (*t >= '0' && *t < '0' + MAX_SUBPATTERN) {
-                cur_match = regmatch + (*t - '0');
-                if (cur_match->rm_so >= 0) {
-                    len = cur_match->rm_eo - cur_match->rm_so;
-                    from = q + cur_match->rm_so;
-                }
-            }
-        }
-        *len_R += len;
-        if (*R) {
-            rt_memcpy(r, from, len);
-            r += len;
-            /* *r = '\0'; - xzalloc did it */
-        }
-    }
-    if (*R == NULL) {
-        *R = vi_zalloc(*len_R + 1);
-        goto fill_result;
-    }
-
-    return found;
-}
-#else /* !ENABLE_FEATURE_VI_REGEX_SEARCH */
 # define strchr_backslash(s, c) strchr(s, c)
-#endif /* ENABLE_FEATURE_VI_REGEX_SEARCH */
 
 // buf must be no longer than MAX_INPUT_LEN!
 static void colon(char *buf)
@@ -1571,14 +1499,6 @@ static void colon(char *buf)
 #  if ENABLE_FEATURE_VI_VERBOSE_STATUS
         int last_line = 0, lines = 0;
 #  endif
-#  if ENABLE_FEATURE_VI_REGEX_SEARCH
-        regex_t preg;
-        int cflags;
-        char *Rorig;
-#   if ENABLE_FEATURE_VI_UNDO
-        int undo = 0;
-#   endif
-#  endif
 
         // F points to the "find" pattern
         // R points to the "replace" pattern
@@ -1616,44 +1536,22 @@ static void colon(char *buf)
             b = e;
         }
 
-#  if ENABLE_FEATURE_VI_REGEX_SEARCH
-        Rorig = R;
-        cflags = 0;
-        if (ignorecase)
-            cflags = REG_ICASE;
-        rt_memset(&preg, 0, sizeof(preg));
-        if (regcomp(&preg, F, cflags) != 0) {
-            status_line(":s bad search pattern");
-            goto regex_search_end;
-        }
-#  else
         len_R = strlen(R);
-#  endif
 
         for (i = b; i <= e; i++) {  // so, :20,23 s \0 find \0 replace \0
             char *ls = q;       // orig line start
             char *found;
  vc4:
-#  if ENABLE_FEATURE_VI_REGEX_SEARCH
-            found = regex_search(q, &preg, Rorig, &len_F, &len_R, &R);
-#  else
             found = char_search(q, F, (FORWARD << 1) | LIMITED);    // search cur line only for "find"
-#  endif
             if (found) {
                 uintptr_t bias;
                 // we found the "find" pattern - delete it
                 // For undo support, the first item should not be chained
                 // This needs to be handled differently depending on
                 // whether or not regex support is enabled.
-#  if ENABLE_FEATURE_VI_REGEX_SEARCH
-#   define TEST_LEN_F len_F // len_F may be zero
-#   define TEST_UNDO1 undo++
-#   define TEST_UNDO2 undo++
-#  else
 #   define TEST_LEN_F 1     // len_F is never zero
 #   define TEST_UNDO1 subs
 #   define TEST_UNDO2 1
-#  endif
                 if (TEST_LEN_F) // match can be empty, no delete needed
                     text_hole_delete(found, found + len_F - 1,
                                 TEST_UNDO1 ? ALLOW_UNDO_CHAIN : ALLOW_UNDO);
@@ -1664,9 +1562,6 @@ static void colon(char *buf)
                     ls += bias;
                     //q += bias; - recalculated anyway
                 }
-#  if ENABLE_FEATURE_VI_REGEX_SEARCH
-                vi_free(R);
-#  endif
                 if (TEST_LEN_F || len_R != 0) {
                     dot = ls;
                     subs++;
@@ -1696,10 +1591,6 @@ static void colon(char *buf)
                 status_line("%d substitutions on %d lines", subs, lines);
 #  endif
         }
-#  if ENABLE_FEATURE_VI_REGEX_SEARCH
- regex_search_end:
-        regfree(&preg);
-#  endif
 #endif /* FEATURE_VI_SEARCH */
     } else if (strncmp(cmd, "version", i) == 0) {  // show software version
         status_line(BB_VER " " BB_BT);
@@ -2194,65 +2085,6 @@ static void new_screen(int ro, int co)
 }
 
 #if ENABLE_FEATURE_VI_SEARCH
-# if ENABLE_FEATURE_VI_REGEX_SEARCH
-
-// search for pattern starting at p
-static char *char_search(char *p, const char *pat, int dir_and_range)
-{
-    struct re_pattern_buffer preg;
-    const char *err;
-    char *q;
-    int i, size, range, start;
-
-    re_syntax_options = RE_SYNTAX_POSIX_BASIC & (~RE_DOT_NEWLINE);
-    if (ignorecase)
-        re_syntax_options |= RE_ICASE;
-
-    rt_memset(&preg, 0, sizeof(preg));
-    err = re_compile_pattern(pat, strlen(pat), &preg);
-    preg.not_bol = p != text;
-    preg.not_eol = p != end - 1;
-    if (err != NULL) {
-        status_line_bold("bad search pattern '%s': %s", pat, err);
-        return p;
-    }
-
-    range = (dir_and_range & 1);
-    q = end - 1; // if FULL
-    if (range == LIMITED)
-        q = next_line(p);
-    if (dir_and_range < 0) { // BACK?
-        q = text;
-        if (range == LIMITED)
-            q = prev_line(p);
-    }
-
-    // RANGE could be negative if we are searching backwards
-    range = q - p;
-    if (range < 0) {
-        size = -range;
-        start = size;
-    } else {
-        size = range;
-        start = 0;
-    }
-    q = p - start;
-    if (q < text)
-        q = text;
-    // search for the compiled pattern, preg, in p[]
-    // range < 0, start == size: search backward
-    // range > 0, start == 0: search forward
-    // re_search() < 0: not found or error
-    // re_search() >= 0: index of found pattern
-    //           struct pattern   char     int   int    int    struct reg
-    // re_search(*pattern_buffer, *string, size, start, range, *regs)
-    i = re_search(&preg, q, size, start, range, /*struct re_registers*:*/ NULL);
-    regfree(&preg);
-    return i < 0 ? NULL : q + i;
-}
-
-# else
-
 #  if ENABLE_FEATURE_VI_SETOPTS
 static int mycmp(const char *s1, const char *s2, int len)
 {
@@ -2295,8 +2127,6 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
     // pattern not found
     return NULL;
 }
-
-# endif
 
 #endif /* FEATURE_VI_SEARCH */
 

@@ -251,20 +251,6 @@
 #define ENABLE_FEATURE_VI_VERBOSE_STATUS 0
 #endif
 
-//config:config FEATURE_VI_REGEX_SEARCH
-//config:   bool "Enable regex in search and replace"
-//config:   default n   # Uses GNU regex, which may be unavailable. FIXME
-//config:   depends on FEATURE_VI_SEARCH
-//config:   help
-//config:     Use extended regex search.
-#ifdef VI_ENABLE_REGEX_SEARCH
-#define ENABLE_FEATURE_VI_REGEX_SEARCH 1
-#define IF_FEATURE_VI_REGEX_SEARCH(...) __VA_ARGS__
-#else
-#define ENABLE_FEATURE_VI_REGEX_SEARCH 0
-#define IF_FEATURE_VI_REGEX_SEARCH(...)
-#endif
-
 //config:config FEATURE_VI_8BIT
 //config:   bool "Allow vi to display 8-bit chars (otherwise shows dots)"
 //config:   default n

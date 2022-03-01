@@ -23,10 +23,6 @@ struct globals;
  * If you want to assign a value, use SET_PTR_TO_GLOBALS(x) */
 struct globals *ptr_to_globals;
 
-/* the CRASHME code is unmaintained, and doesn't currently build */
-#define ENABLE_FEATURE_VI_CRASHME 0
-
-
 #if ENABLE_LOCALE_SUPPORT
 
 #if ENABLE_FEATURE_VI_8BIT
@@ -182,9 +178,6 @@ struct globals {
     int tabstop;
     int last_search_char;    // last char searched for (int because of Unicode)
     smallint last_search_cmd;    // command used to invoke last char search
-#if ENABLE_FEATURE_VI_CRASHME
-    char last_input_char;    // last char read from user
-#endif
 #if ENABLE_FEATURE_VI_UNDO_QUEUE
     char undo_queue_state;   // One of UNDO_INS, UNDO_DEL, UNDO_EMPTY
 #endif
@@ -229,13 +222,7 @@ struct globals {
 #if ENABLE_FEATURE_VI_COLON
     char *initial_cmds[3];  // currently 2 entries, NULL terminated
 #endif
-    // Should be just enough to hold a key sequence,
-    // but CRASHME mode uses it as generated command buffer too
-#if ENABLE_FEATURE_VI_CRASHME
-    char readbuffer[128];
-#else
     char readbuffer[KEYCODE_BUFFER_SIZE];
-#endif
 #define STATUS_BUFFER_LEN  200
     char status_buffer[STATUS_BUFFER_LEN]; // messages to the user
 #if ENABLE_FEATURE_VI_DOT_CMD
@@ -312,9 +299,6 @@ struct globals {
 #define tabstop                 (G.tabstop            )
 #define last_search_char        (G.last_search_char   )
 #define last_search_cmd         (G.last_search_cmd    )
-#if ENABLE_FEATURE_VI_CRASHME
-#define last_input_char         (G.last_input_char    )
-#endif
 #if ENABLE_FEATURE_VI_READONLY
 #define readonly_mode           (G.readonly_mode      )
 #else
@@ -464,7 +448,7 @@ static void end_cmd_q(void);    // stop saving input chars
 #if ENABLE_FEATURE_VI_SETOPTS
 static void showmatching(char *);   // show the matching pair ()  []  {}
 #endif
-#if ENABLE_FEATURE_VI_YANKMARK || (ENABLE_FEATURE_VI_COLON && ENABLE_FEATURE_VI_SEARCH) || ENABLE_FEATURE_VI_CRASHME
+#if ENABLE_FEATURE_VI_YANKMARK || (ENABLE_FEATURE_VI_COLON && ENABLE_FEATURE_VI_SEARCH)
 // might reallocate text[]! use p += string_insert(p, ...),
 // and be careful to not use pointers into potentially freed text[]!
 # if !ENABLE_FEATURE_VI_UNDO
@@ -492,12 +476,6 @@ static void undo_queue_commit(void); // flush any queued objects to the undo sta
 #define undo_queue_commit() ((void)0)
 #endif
 
-#if ENABLE_FEATURE_VI_CRASHME
-static void crash_dummy();
-static void crash_test();
-static int crashme = 0;
-#endif
-
 static struct optparse options;
 
 static int vi_main(int argc, char **argv)
@@ -521,9 +499,6 @@ static int vi_main(int argc, char **argv)
 #endif
 #endif
 
-#if ENABLE_FEATURE_VI_CRASHME
-    srand((long) getpid());
-#endif
 #ifdef NO_SUCH_APPLET_YET
     // if we aren't "vi", we are "view"
     if (ENABLE_FEATURE_VI_READONLY && applet_name[2]) {
@@ -545,16 +520,8 @@ static int vi_main(int argc, char **argv)
 #endif
     optparse_init(&options, argv);
     while ((c = optparse(&options,
-#if ENABLE_FEATURE_VI_CRASHME
-            "C"
-#endif
             "RHh" IF_FEATURE_VI_COLON("c:"))) != -1) {
         switch (c) {
-#if ENABLE_FEATURE_VI_CRASHME
-        case 'C':
-            crashme = 1;
-            break;
-#endif
 #if ENABLE_FEATURE_VI_READONLY
         case 'R':       // Read-only flag
             SET_READONLY_MODE(readonly_mode);
@@ -734,9 +701,6 @@ static void edit_file(char *fn)
     mark[26] = mark[27] = text; // init "previous context"
 #endif
 
-#if ENABLE_FEATURE_VI_CRASHME
-    last_input_char = '\0';
-#endif
     crow = 0;
     ccol = 0;
 
@@ -786,22 +750,7 @@ static void edit_file(char *fn)
     redraw(FALSE);          // dont force every col re-draw
     //------This is the main Vi cmd handling loop -----------------------
     while (editing > 0) {
-#if ENABLE_FEATURE_VI_CRASHME
-        if (crashme > 0) {
-            if ((end - text) > 1) {
-                crash_dummy();  // generate a random command
-            } else {
-                crashme = 0;
-                string_insert(text, "\n\n#####  Ran out of text to work on.  #####\n\n", NO_UNDO); // insert the string
-                dot = text;
-                refresh(FALSE);
-            }
-        }
-#endif
         c = get_one_char(); // get a cmd from user
-#if ENABLE_FEATURE_VI_CRASHME
-        last_input_char = c;
-#endif
 #if ENABLE_FEATURE_VI_YANKMARK
         // save a copy of the current line- for the 'U" command
         if (begin_line(dot) != cur_line) {
@@ -832,10 +781,6 @@ static void edit_file(char *fn)
             refresh(FALSE);
             show_status_line();
         }
-#if ENABLE_FEATURE_VI_CRASHME
-        if (crashme > 0)
-            crash_test();   // test editor variables
-#endif
     }
     //-------------------------------------------------------------------
 
@@ -2889,8 +2834,7 @@ static void end_cmd_q(void)
 #endif /* FEATURE_VI_DOT_CMD */
 
 #if ENABLE_FEATURE_VI_YANKMARK \
- || (ENABLE_FEATURE_VI_COLON && ENABLE_FEATURE_VI_SEARCH) \
- || ENABLE_FEATURE_VI_CRASHME
+ || (ENABLE_FEATURE_VI_COLON && ENABLE_FEATURE_VI_SEARCH)
 // might reallocate text[]! use p += string_insert(p, ...),
 // and be careful to not use pointers into potentially freed text[]!
 static uintptr_t string_insert(char *p, const char *s, int undo) // insert the string at 'p'
@@ -3323,10 +3267,6 @@ static void flash(int h)
 
 static void indicate_error(void)
 {
-#if ENABLE_FEATURE_VI_CRASHME
-    if (crashme > 0)
-        return;
-#endif
     cmd_error = TRUE;
     if (!err_method) {
         vi_puts(ESC_BELL);
@@ -3774,11 +3714,6 @@ static void do_cmd(int c)
         //case 0x10:    // dle
         //case 0x11:    // dc1
         //case 0x13:    // dc3
-#if ENABLE_FEATURE_VI_CRASHME
-    case 0x14:          // dc4  ctrl-T
-        crashme = (crashme == 0) ? 1 : 0;
-        break;
-#endif
         //case 0x16:    // syn
         //case 0x17:    // etb
         //case 0x18:    // can
@@ -4570,208 +4505,3 @@ static void do_cmd(int c)
     if (*dot == '\n' && cnt > 0 && cmd_mode == 0)
         dot--;
 }
-
-/* NB!  the CRASHME code is unmaintained, and doesn't currently build */
-#if ENABLE_FEATURE_VI_CRASHME
-static int totalcmds = 0;
-static int Mp = 85;             // Movement command Probability
-static int Np = 90;             // Non-movement command Probability
-static int Dp = 96;             // Delete command Probability
-static int Ip = 97;             // Insert command Probability
-static int Yp = 98;             // Yank command Probability
-static int Pp = 99;             // Put command Probability
-static int M = 0, N = 0, I = 0, D = 0, Y = 0, P = 0, U = 0;
-static const char chars[20] = "\t012345 abcdABCD-=.$";
-static const char *const words[20] = {
-    "this", "is", "a", "test",
-    "broadcast", "the", "emergency", "of",
-    "system", "quick", "brown", "fox",
-    "jumped", "over", "lazy", "dogs",
-    "back", "January", "Febuary", "March"
-};
-static const char *const lines[20] = {
-    "You should have received a copy of the GNU General Public License\n",
-    "char c, cm, *cmd, *cmd1;\n",
-    "generate a command by percentages\n",
-    "Numbers may be typed as a prefix to some commands.\n",
-    "Quit, discarding changes!\n",
-    "Forced write, if permission originally not valid.\n",
-    "In general, any ex or ed command (such as substitute or delete).\n",
-    "I have tickets available for the Blazers vs LA Clippers for Monday, Janurary 1 at 1:00pm.\n",
-    "Please get w/ me and I will go over it with you.\n",
-    "The following is a list of scheduled, committed changes.\n",
-    "1.   Launch Norton Antivirus (Start, Programs, Norton Antivirus)\n",
-    "Reminder....Town Meeting in Central Perk cafe today at 3:00pm.\n",
-    "Any question about transactions please contact Sterling Huxley.\n",
-    "I will try to get back to you by Friday, December 31.\n",
-    "This Change will be implemented on Friday.\n",
-    "Let me know if you have problems accessing this;\n",
-    "Sterling Huxley recently added you to the access list.\n",
-    "Would you like to go to lunch?\n",
-    "The last command will be automatically run.\n",
-    "This is too much english for a computer geek.\n",
-};
-static char *multilines[20] = {
-    "You should have received a copy of the GNU General Public License\n",
-    "char c, cm, *cmd, *cmd1;\n",
-    "generate a command by percentages\n",
-    "Numbers may be typed as a prefix to some commands.\n",
-    "Quit, discarding changes!\n",
-    "Forced write, if permission originally not valid.\n",
-    "In general, any ex or ed command (such as substitute or delete).\n",
-    "I have tickets available for the Blazers vs LA Clippers for Monday, Janurary 1 at 1:00pm.\n",
-    "Please get w/ me and I will go over it with you.\n",
-    "The following is a list of scheduled, committed changes.\n",
-    "1.   Launch Norton Antivirus (Start, Programs, Norton Antivirus)\n",
-    "Reminder....Town Meeting in Central Perk cafe today at 3:00pm.\n",
-    "Any question about transactions please contact Sterling Huxley.\n",
-    "I will try to get back to you by Friday, December 31.\n",
-    "This Change will be implemented on Friday.\n",
-    "Let me know if you have problems accessing this;\n",
-    "Sterling Huxley recently added you to the access list.\n",
-    "Would you like to go to lunch?\n",
-    "The last command will be automatically run.\n",
-    "This is too much english for a computer geek.\n",
-};
-
-// create a random command to execute
-static void crash_dummy()
-{
-    static int sleeptime;   // how long to pause between commands
-    char c, cm, *cmd, *cmd1;
-    int i, cnt, thing, rbi, startrbi, percent;
-
-    // "dot" movement commands
-    cmd1 = " \n\r\002\004\005\006\025\0310^$-+wWeEbBhjklHL";
-
-    // is there already a command running?
-    if (readbuffer[0] > 0)
-        goto cd1;
- cd0:
-    readbuffer[0] = 'X';
-    startrbi = rbi = 1;
-    sleeptime = 0;          // how long to pause between commands
-    rt_memset(readbuffer, '\0', sizeof(readbuffer));
-    // generate a command by percentages
-    percent = (int) lrand48() % 100;        // get a number from 0-99
-    if (percent < Mp) {     //  Movement commands
-        // available commands
-        cmd = cmd1;
-        M++;
-    } else if (percent < Np) {      //  non-movement commands
-        cmd = "mz<>\'\"";       // available commands
-        N++;
-    } else if (percent < Dp) {      //  Delete commands
-        cmd = "dx";             // available commands
-        D++;
-    } else if (percent < Ip) {      //  Inset commands
-        cmd = "iIaAsrJ";        // available commands
-        I++;
-    } else if (percent < Yp) {      //  Yank commands
-        cmd = "yY";             // available commands
-        Y++;
-    } else if (percent < Pp) {      //  Put commands
-        cmd = "pP";             // available commands
-        P++;
-    } else {
-        // We do not know how to handle this command, try again
-        U++;
-        goto cd0;
-    }
-    // randomly pick one of the available cmds from "cmd[]"
-    i = (int) lrand48() % strlen(cmd);
-    cm = cmd[i];
-    if (strchr(":\024", cm))
-        goto cd0;               // dont allow colon or ctrl-T commands
-    readbuffer[rbi++] = cm; // put cmd into input buffer
-
-    // now we have the command-
-    // there are 1, 2, and multi char commands
-    // find out which and generate the rest of command as necessary
-    if (strchr("dmryz<>\'\"", cm)) {        // 2-char commands
-        cmd1 = " \n\r0$^-+wWeEbBhjklHL";
-        if (cm == 'm' || cm == '\'' || cm == '\"') {    // pick a reg[]
-            cmd1 = "abcdefghijklmnopqrstuvwxyz";
-        }
-        thing = (int) lrand48() % strlen(cmd1); // pick a movement command
-        c = cmd1[thing];
-        readbuffer[rbi++] = c;  // add movement to input buffer
-    }
-    if (strchr("iIaAsc", cm)) {     // multi-char commands
-        if (cm == 'c') {
-            // change some thing
-            thing = (int) lrand48() % strlen(cmd1); // pick a movement command
-            c = cmd1[thing];
-            readbuffer[rbi++] = c;  // add movement to input buffer
-        }
-        thing = (int) lrand48() % 4;    // what thing to insert
-        cnt = (int) lrand48() % 10;     // how many to insert
-        for (i = 0; i < cnt; i++) {
-            if (thing == 0) {       // insert chars
-                readbuffer[rbi++] = chars[((int) lrand48() % strlen(chars))];
-            } else if (thing == 1) {        // insert words
-                strcat(readbuffer, words[(int) lrand48() % 20]);
-                strcat(readbuffer, " ");
-                sleeptime = 0;  // how fast to type
-            } else if (thing == 2) {        // insert lines
-                strcat(readbuffer, lines[(int) lrand48() % 20]);
-                sleeptime = 0;  // how fast to type
-            } else {        // insert multi-lines
-                strcat(readbuffer, multilines[(int) lrand48() % 20]);
-                sleeptime = 0;  // how fast to type
-            }
-        }
-        strcat(readbuffer, "\033");
-    }
-    readbuffer[0] = strlen(readbuffer + 1);
- cd1:
-    totalcmds++;
-    if (sleeptime > 0)
-        mysleep(sleeptime);      // sleep 1/100 sec
-}
-
-// test to see if there are any errors
-static void crash_test()
-{
-    static time_t oldtim;
-
-    time_t tim;
-    char d[2], msg[80];
-
-    msg[0] = '\0';
-    if (end < text) {
-        strcat(msg, "end<text ");
-    }
-    if (end > textend) {
-        strcat(msg, "end>textend ");
-    }
-    if (dot < text) {
-        strcat(msg, "dot<text ");
-    }
-    if (dot > end) {
-        strcat(msg, "dot>end ");
-    }
-    if (screenbegin < text) {
-        strcat(msg, "screenbegin<text ");
-    }
-    if (screenbegin > end - 1) {
-        strcat(msg, "screenbegin>end-1 ");
-    }
-
-    if (msg[0]) {
-        vi_puts("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
-            totalcmds, last_input_char, msg, ESC_BOLD_TEXT, ESC_NORM_TEXT);
-        while (safe_read(STDIN_FILENO, d, 1) > 0) {
-            if (d[0] == '\n' || d[0] == '\r')
-                break;
-        }
-    }
-    tim = time(NULL);
-    if (tim >= (oldtim + 3)) {
-        sprintf(status_buffer,
-                "Tot=%d: M=%d N=%d I=%d D=%d Y=%d P=%d U=%d size=%d",
-                totalcmds, M, N, I, D, Y, P, U, end - text + 1);
-        oldtim = tim;
-    }
-}
-#endif

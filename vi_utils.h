@@ -19,6 +19,10 @@
 #include <sys/errno.h>
 #include <sys/stat.h>
 
+#define DBG_TAG "vi"
+#define DBG_LVL DBG_INFO
+#include <rtdbg.h>
+
 #define BB_VER "latest: 2021-08-29"
 #define BB_BT  "Busybox vi for RT-Thread"
 
@@ -369,6 +373,8 @@ void* vi_zalloc(size_t size);
 char *vi_strdup(const char *s);
 char *vi_strndup(const char *s, size_t n);
 int vi_putchar(int c);
+void vi_puts(const char *s);
+void vi_write(const void *buffer, uint32_t size);
 
 int64_t read_key(int fd, char *buffer, int timeout);
 char* xasprintf(const char *format, ...);

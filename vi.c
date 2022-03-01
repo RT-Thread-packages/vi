@@ -89,6 +89,7 @@ enum {
 #if ENABLE_FEATURE_VI_DOT_CMD
 static const char modifying_cmds[] ALIGN1 = "aAcCdDiIJoOpPrRs""xX<>~";
 #endif
+static const char *_show_usage = "Usage: vi [FILE]\n";
 
 enum {
     YANKONLY = FALSE,
@@ -511,7 +512,7 @@ static int vi_main(int argc, char **argv)
 
     if(vi_mem_init() == 0)
     {
-        rt_kprintf("vi initialization failed.\r\n");
+        LOG_E("vi initialization failed.\r\n");
         return -1;
     }
 
@@ -574,7 +575,7 @@ static int vi_main(int argc, char **argv)
             show_help();
             // fall through
         default:
-            rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
+            vi_puts(_show_usage);
             goto vi_exit;
         }
     }
@@ -585,12 +586,12 @@ static int vi_main(int argc, char **argv)
     file_name = optparse_arg(&options);
     if(file_name == NULL)
     {
-        rt_kprintf("Usage: vi [FILE]\n"); /*bb_show_usage();*/
+        vi_puts(_show_usage);
         goto vi_exit;
     }
 
     // "Save cursor, use alternate screen buffer, clear screen"
-    rt_kprintf("\033[?1049h");
+    vi_puts("\033[?1049h");
     // This is the main file handling loop
     while (1)
     {
@@ -602,7 +603,7 @@ static int vi_main(int argc, char **argv)
             break;
     }
     // "Use normal screen buffer, restore cursor"
-    rt_kprintf("\033[?1049l");
+    vi_puts("\033[?1049l");
 
 vi_exit:
     vi_free(text);
@@ -716,7 +717,7 @@ static void edit_file(char *fn)
 #if ENABLE_FEATURE_VI_ASK_TERMINAL
     if (G.get_rowcol_error /* TODO? && no input on stdin */) {
         uint64_t k;
-        rt_kprintf("\033[999;999H" "\033[6n");
+        vi_puts("\033[999;999H" "\033[6n");
         k = read_key(STDIN_FILENO, readbuffer, /*timeout_ms:*/ 100);
         if ((int32_t)k == KEYCODE_CURSOR_POS) {
             uint32_t rc = (k >> 32);
@@ -1321,7 +1322,7 @@ static void colon(char *buf)
         cookmode();
         retcode = system(exp); // run the cmd
         if (retcode)
-            rt_kprintf("\nshell returned %i\n\n", retcode);
+            vi_puts("\nshell returned %i\n\n", retcode);
         rawmode();
         Hit_Return();           // let user see results
     }
@@ -1409,7 +1410,7 @@ static void colon(char *buf)
             r = end_line(dot);
         }
         go_bottom_and_clear_to_eol();
-        rt_kprintf("\r");
+        vi_puts("\r");
         for (; q <= r; q++) {
             int c_is_no_print;
 
@@ -1420,7 +1421,7 @@ static void colon(char *buf)
                 standout_start();
             }
             if (c == '\n') {
-                rt_kprintf("$\r");
+                vi_puts("$\r");
             } else if (c < ' ' || c == 127) {
                 vi_putchar('^');
                 if (c == 127)
@@ -1813,7 +1814,7 @@ static void Hit_Return(void)
     int c;
 
     standout_start();
-    rt_kprintf("[Hit return to continue]");
+    vi_puts("[Hit return to continue]");
     standout_end();
     while ((c = get_one_char()) != '\n' && c != '\r')
         continue;
@@ -3007,7 +3008,7 @@ static char *yank_delete(char *start, char *stop, int buftype, int yf, int undo)
 
 static void show_help(void)
 {
-    rt_kprintf("These features are available:"
+    vi_puts("These features are available:"
 #if ENABLE_FEATURE_VI_SEARCH
     "\n\tPattern searches with / and ?"
 #endif
@@ -3237,7 +3238,7 @@ static int readit(void) // read (maybe cursor) key from stdin
             goto again;
         go_bottom_and_clear_to_eol();
         cookmode(); // terminal to "cooked"
-        rt_kprintf("can't read user input");
+        LOG_E("can't read user input");
     }
     return c;
 }
@@ -3312,7 +3313,7 @@ static char *get_input_line(const char *prompt)
     strcpy(buf, prompt);
     last_status_cksum = 0;  // force status update
     go_bottom_and_clear_to_eol();
-    rt_kprintf(buf); // write out the :, /, or ? prompt
+    vi_puts(buf); // write out the :, /, or ? prompt
 
     i = strlen(buf);
     while (i < MAX_INPUT_LEN - 1) {
@@ -3325,7 +3326,7 @@ static char *get_input_line(const char *prompt)
             #endif
                 c == 8 || c == 127) {
             // user wants to erase prev char
-            rt_kprintf("\b \b"); // erase char on screen
+            vi_puts("\b \b"); // erase char on screen
             buf[--i] = '\0';
             if (i <= 0) // user backs up before b-o-l, exit
                 break;
@@ -3453,13 +3454,13 @@ static void place_cursor(int row, int col)
     if (col >= columns) col = columns - 1;
 
     rt_sprintf(cm1, ESC_SET_CURSOR_POS, row + 1, col + 1);
-    rt_kprintf(cm1);
+    vi_puts(cm1);
 }
 
 //----- Erase from cursor to end of line -----------------------
 static void clear_to_eol(void)
 {
-    rt_kprintf(ESC_CLEAR2EOL);
+    vi_puts(ESC_CLEAR2EOL);
 }
 
 static void go_bottom_and_clear_to_eol(void)
@@ -3471,13 +3472,13 @@ static void go_bottom_and_clear_to_eol(void)
 //----- Start standout mode ------------------------------------
 static void standout_start(void)
 {
-    rt_kprintf(ESC_BOLD_TEXT);
+    vi_puts(ESC_BOLD_TEXT);
 }
 
 //----- End standout mode --------------------------------------
 static void standout_end(void)
 {
-    rt_kprintf(ESC_NORM_TEXT);
+    vi_puts(ESC_NORM_TEXT);
 }
 
 //----- Flash the screen  --------------------------------------
@@ -3498,7 +3499,7 @@ static void indicate_error(void)
 #endif
     cmd_error = TRUE;
     if (!err_method) {
-        rt_kprintf(ESC_BELL);
+        vi_puts(ESC_BELL);
     } else {
         flash(10);
     }
@@ -3535,7 +3536,7 @@ static void show_status_line(void)
     if (have_status_msg || ((cnt > 0 && last_status_cksum != cksum))) {
         last_status_cksum = cksum;      // remember if we have seen this line
         go_bottom_and_clear_to_eol();
-        rt_kprintf(status_buffer);
+        vi_puts(status_buffer);
         if (have_status_msg) {
             if (((int)strlen(status_buffer) - (have_status_msg - 1)) >
                     (columns - 1) ) {
@@ -3683,7 +3684,7 @@ static int format_edit_status(void)
 static void redraw(int full_screen)
 {
     // cursor to top,left; clear to the end of screen
-    rt_kprintf(ESC_SET_CURSOR_TOPLEFT ESC_CLEAR2EOS);
+    vi_puts(ESC_SET_CURSOR_TOPLEFT ESC_CLEAR2EOS);
     screen_erase();     // erase the internal screen buffer
     last_status_cksum = 0;  // force status update
     refresh(full_screen);   // this will redraw the entire display
@@ -3833,7 +3834,7 @@ static void refresh(int full_screen)
             rt_memcpy(sp+cs, out_buf+cs, ce-cs+1);
             place_cursor(li, cs);
             // write line out to terminal
-            write(STDOUT_FILENO, &sp[cs], ce - cs + 1); /* fwrite(&sp[cs], ce - cs + 1, 1, stdout); */
+            vi_write(&sp[cs], ce - cs + 1); /* fwrite(&sp[cs], ce - cs + 1, 1, stdout); */
         }
     }
 
@@ -4928,7 +4929,7 @@ static void crash_test()
     }
 
     if (msg[0]) {
-        rt_kprintf("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
+        vi_puts("\n\n%d: \'%c\' %s\n\n\n%s[Hit return to continue]%s",
             totalcmds, last_input_char, msg, ESC_BOLD_TEXT, ESC_NORM_TEXT);
         while (safe_read(STDIN_FILENO, d, 1) > 0) {
             if (d[0] == '\n' || d[0] == '\r')

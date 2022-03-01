@@ -5,10 +5,6 @@
 #include "vi_utils.h"
 #include <mem_sandbox.h>
 
-#define DBG_TAG "vi"
-#define DBG_LVL DBG_INFO
-#include <rtdbg.h>
-
 #ifndef VI_SANDBOX_SIZE_KB
 #define VI_SANDBOX_SIZE_KB   20 /* KB */
 #endif
@@ -195,7 +191,7 @@ int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
         /* I doubt many callers would handle this correctly! */
         if (errno == ENOMEM)
             continue;
-        rt_kprintf("poll");
+        LOG_E("poll");
         return n;
     }
 }
@@ -289,6 +285,16 @@ int vi_putchar(int c)
 {
     rt_kprintf("%c", c);
     return (int)c;
+}
+
+void vi_puts(const char *s)
+{
+    rt_kprintf(s);
+}
+
+void vi_write(const void *buffer, uint32_t size)
+{
+    rt_device_write(rt_console_get_device(), 0, buffer, size);
 }
 
 int64_t read_key(int fd, char *buffer, int timeout)
@@ -590,7 +596,7 @@ char* xasprintf(const char *format, ...)
     r = vasprintf(&string_ptr, format, p);
     va_end(p);
     if (r < 0)
-        rt_kprintf("die_memory_exhausted"); //bb_die_memory_exhausted();
+        LOG_E("die_memory_exhausted");
     return string_ptr;
 }
 

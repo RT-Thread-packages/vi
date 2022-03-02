@@ -211,9 +211,6 @@ struct globals {
     char regtype[28];       // buffer type: WHOLE, MULTI or PARTIAL
     char *mark[28];         // user marks points somewhere in text[]-  a-z and previous context ''
 #endif
-#if ENABLE_FEATURE_VI_USE_SIGNALS
-    sigjmp_buf restart;     // int_handler() jumps to location remembered here
-#endif
 #ifdef RT_USING_POSIX_TERMIOS
     struct termios term_orig; // remember what the cooked mode was
 #endif
@@ -434,11 +431,6 @@ static char *char_search(char *, const char *, int); // search for pattern start
 static char *get_address(char *p, int *b, int *e, unsigned int *got); // get colon addr, if present
 #endif
 static void colon(char *);  // execute the "colon" mode cmds
-#if ENABLE_FEATURE_VI_USE_SIGNALS
-static void winch_handler(int); // catch window size changes
-static void tstp_handler(int);  // catch ctrl-Z
-static void int_handler(int);   // catch ctrl-C
-#endif
 #if ENABLE_FEATURE_VI_DOT_CMD
 static void start_new_cmd_q(char);  // new queue for command
 static void end_cmd_q(void);    // stop saving input chars
@@ -667,9 +659,6 @@ static void edit_file(char *fn)
 #define cur_line edit_file__cur_line
 #endif
     int c;
-#if ENABLE_FEATURE_VI_USE_SIGNALS
-    int sig;
-#endif
 
     editing = 1;    // 0 = exit, 1 = one file, 2 = multiple files
     rawmode();
@@ -703,19 +692,6 @@ static void edit_file(char *fn)
 
     crow = 0;
     ccol = 0;
-
-#if ENABLE_FEATURE_VI_USE_SIGNALS
-    signal(SIGWINCH, winch_handler);
-    signal(SIGTSTP, tstp_handler);
-    sig = sigsetjmp(restart, 1);
-    if (sig != 0) {
-        screenbegin = dot = text;
-    }
-    // int_handler() can jump to "restart",
-    // must install handler *after* initializing "restart"
-    signal(SIGINT, int_handler);
-#endif
-
     cmd_mode = 0;       // 0=command  1=insert  2='R'eplace
     cmdcnt = 0;
     offset = 0;         // no horizontal offset
@@ -2804,10 +2780,6 @@ static void show_help(void)
 #if ENABLE_FEATURE_VI_SETOPTS
     "\n\tSettable options with \":set\""
 #endif
-#if ENABLE_FEATURE_VI_USE_SIGNALS
-    "\n\tSignal catching- ^C"
-    "\n\tJob suspend and resume with ^Z"
-#endif
 #if ENABLE_FEATURE_VI_WIN_RESIZE
     "\n\tAdapt to window re-sizes"
 #endif
@@ -2942,50 +2914,6 @@ static void cookmode(void)
     tcsetattr_stdin_TCSANOW(&term_orig);
 #endif
 }
-
-#if ENABLE_FEATURE_VI_USE_SIGNALS
-static void winch_handler(int sig UNUSED_PARAM)
-{
-    int save_errno = errno;
-    // FIXME: do it in main loop!!!
-    signal(SIGWINCH, winch_handler);
-    query_screen_dimensions();
-    new_screen(rows, columns);  // get memory for virtual screen
-    redraw(TRUE);       // re-draw the screen
-    errno = save_errno;
-}
-
-static void tstp_handler(int sig UNUSED_PARAM)
-{
-    int save_errno = errno;
-
-    // ioctl inside cookmode() was seen to generate SIGTTOU,
-    // stopping us too early. Prevent that:
-    signal(SIGTTOU, SIG_IGN);
-
-    go_bottom_and_clear_to_eol();
-    cookmode(); // terminal to "cooked"
-
-    // stop now
-    //signal(SIGTSTP, SIG_DFL);
-    //raise(SIGTSTP);
-    raise(SIGSTOP); // avoid "dance" with TSTP handler - use SIGSTOP instead
-    //signal(SIGTSTP, tstp_handler);
-
-    // we have been "continued" with SIGCONT, restore screen and termios
-    rawmode(); // terminal to "raw"
-    last_status_cksum = 0; // force status update
-    redraw(TRUE); // re-draw the screen
-
-    errno = save_errno;
-}
-
-static void int_handler(int sig)
-{
-    signal(SIGINT, int_handler);
-    siglongjmp(restart, sig);
-}
-#endif /* FEATURE_VI_USE_SIGNALS */
 
 // sleep for 'h' 1/100 seconds, return 1/0 if stdin is (ready for read)/(not ready)
 static int mysleep(int hund)
@@ -3534,15 +3462,11 @@ static void refresh(int full_screen)
     if (ENABLE_FEATURE_VI_WIN_RESIZE IF_FEATURE_VI_ASK_TERMINAL(&& !G.get_rowcol_error) ) {
         unsigned c = columns, r = rows;
         query_screen_dimensions();
-#if ENABLE_FEATURE_VI_USE_SIGNALS
-        full_screen |= (c - columns) | (r - rows);
-#else
         if (c != columns || r != rows) {
             full_screen = TRUE;
             /* update screen memory since SIGWINCH won't have done it */
             new_screen(rows, columns);
         }
-#endif
     }
     sync_cursor(dot, &crow, &ccol); // where cursor will be (on "dot")
     tp = screenbegin;   // index into text[] of top line

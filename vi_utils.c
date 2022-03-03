@@ -191,7 +191,7 @@ int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout)
         /* I doubt many callers would handle this correctly! */
         if (errno == ENOMEM)
             continue;
-        LOG_E("poll");
+        LOG_E("safe_poll");
         return n;
     }
 }
@@ -559,7 +559,7 @@ int64_t read_key(int fd, char *buffer, int timeout)
     goto start_over;
 }
 
-static int vasprintf(char **string_ptr, const char *format, va_list p)
+static int vi_vasprintf(char **string_ptr, const char *format, va_list p)
 {
     int r;
     va_list p2;
@@ -585,7 +585,7 @@ static int vasprintf(char **string_ptr, const char *format, va_list p)
 }
 
 // Die with an error message if we can't malloc() enough space and do an
-// sprintf() into that space.
+// rt_sprintf() into that space.
 char* xasprintf(const char *format, ...)
 {
     va_list p;
@@ -593,7 +593,7 @@ char* xasprintf(const char *format, ...)
     char *string_ptr;
 
     va_start(p, format);
-    r = vasprintf(&string_ptr, format, p);
+    r = vi_vasprintf(&string_ptr, format, p);
     va_end(p);
     if (r < 0)
         LOG_E("die_memory_exhausted");

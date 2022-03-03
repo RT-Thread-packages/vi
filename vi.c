@@ -266,13 +266,12 @@ struct globals {
 #endif /* ENABLE_FEATURE_VI_UNDO */
 
 };
-#define G (*ptr_to_globals)
-#define text           (G.text          )
-#define text_size      (G.text_size     )
-#define end            (G.end           )
-#define dot            (G.dot           )
-#define reg            (G.reg           )
-
+#define G                       (*ptr_to_globals      )
+#define text                    (G.text               )
+#define text_size               (G.text_size          )
+#define end                     (G.end                )
+#define dot                     (G.dot                )
+#define reg                     (G.reg                )
 #define vi_setops               (G.vi_setops          )
 #define editing                 (G.editing            )
 #define cmd_mode                (G.cmd_mode           )
@@ -309,34 +308,31 @@ struct globals {
 #define last_search_pattern     (G.last_search_pattern)
 #define indentcol               (G.indentcol          )
 #define cmd_error               (G.cmd_error          )
-
 #define edit_file__cur_line     (G.edit_file__cur_line)
 #define refresh__old_offset     (G.refresh__old_offset)
 #define format_edit_status__tot (G.format_edit_status__tot)
-
-#define YDreg          (G.YDreg         )
-//#define Ureg           (G.Ureg          )
-#define regtype        (G.regtype )
-#define mark           (G.mark          )
-#define restart        (G.restart       )
+#define YDreg                   (G.YDreg              )
+//#define Ureg                   (G.Ureg               )
+#define regtype                 (G.regtype            )
+#define mark                    (G.mark               )
+#define restart                 (G.restart            )
 #ifdef RT_USING_POSIX_TERMIOS
-#define term_orig      (G.term_orig     )
+#define term_orig               (G.term_orig          )
 #endif
-#define cindex         (G.cindex        )
-#define keep_index     (G.keep_index    )
-#define initial_cmds   (G.initial_cmds  )
-#define readbuffer     (G.readbuffer    )
-#define scr_out_buf    (G.scr_out_buf   )
-#define last_modifying_cmd  (G.last_modifying_cmd )
-#define get_input_line__buf (G.get_input_line__buf)
-
+#define cindex                  (G.cindex             )
+#define keep_index              (G.keep_index         )
+#define initial_cmds            (G.initial_cmds       )
+#define readbuffer              (G.readbuffer         )
+#define scr_out_buf             (G.scr_out_buf        )
+#define last_modifying_cmd      (G.last_modifying_cmd )
+#define get_input_line__buf     (G.get_input_line__buf)
 #if ENABLE_FEATURE_VI_UNDO
-#define undo_stack_tail  (G.undo_stack_tail )
+#define undo_stack_tail         (G.undo_stack_tail    )
 # if ENABLE_FEATURE_VI_UNDO_QUEUE
-#define undo_queue_state (G.undo_queue_state)
-#define undo_q           (G.undo_q          )
-#define undo_queue       (G.undo_queue      )
-#define undo_queue_spos  (G.undo_queue_spos )
+#define undo_queue_state        (G.undo_queue_state   )
+#define undo_q                  (G.undo_q             )
+#define undo_queue              (G.undo_queue         )
+#define undo_queue_spos         (G.undo_queue_spos    )
 # endif
 #endif
 
@@ -420,10 +416,8 @@ static int format_edit_status(void);    // format file status on status line
 static void redraw(int);    // force a full screen refresh
 static char *format_line(char* /*, int*/);
 static void refresh(int);   // update the terminal from screen[]
-
 static void indicate_error(void);       // use flash or beep to indicate error
 static void Hit_Return(void);
-
 #if ENABLE_FEATURE_VI_SEARCH
 static char *char_search(char *, const char *, int); // search for pattern starting at p
 #endif
@@ -1546,7 +1540,7 @@ static void colon(char *buf)
 # endif
         //if (useforce) {
             // if "fn" is not write-able, chmod u+w
-            // sprintf(syscmd, "chmod u+w %s", fn);
+            // rt_sprintf(syscmd, "chmod u+w %s", fn);
             // system(syscmd);
             // forced = TRUE;
         //}
@@ -1559,7 +1553,7 @@ static void colon(char *buf)
         }
         //if (useforce && forced) {
             // chmod u-w
-            // sprintf(syscmd, "chmod u-w %s", fn);
+            // rt_sprintf(syscmd, "chmod u-w %s", fn);
             // system(syscmd);
             // forced = FALSE;
         //}

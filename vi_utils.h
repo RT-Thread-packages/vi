@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <strings.h>
+#include <posix/string.h>
 #include <unistd.h>
 #include <poll.h>
 #include <sys/types.h>
@@ -375,7 +375,7 @@ char* skip_non_whitespace(const char *s);
 #endif
 
 int index_in_strings(const char *strings, const char *key);
-int safe_read(int fd, void *buf, size_t count);
+ssize_t safe_read(int fd, void *buf, size_t count);
 int safe_poll(struct pollfd *ufds, nfds_t nfds, int timeout);
 ssize_t full_write(int fd, const void *buf, size_t len);
 ssize_t full_read(int fd, void *buf, size_t len);
